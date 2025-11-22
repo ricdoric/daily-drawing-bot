@@ -1,0 +1,28 @@
+{
+  "name": "daily-drawing-bot",
+  "version": "1.0.0",
+  "description": "Discord bot to manage daily drawing challenges",
+  "homepage": "https://github.com/ricdoric/daily-drawing-bot#readme",
+  "bugs": {
+    "url": "https://github.com/ricdoric/daily-drawing-bot/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ricdoric/daily-drawing-bot.git"
+  },
+  "license": "MIT",
+  "author": "Eric Schneider",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "dev": "ts-node-dev src/index.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.2.3"
+  }
+}
