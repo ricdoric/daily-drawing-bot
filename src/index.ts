@@ -75,12 +75,21 @@ client.on("threadCreate", async (thread) => {
     const parentName = (thread.parent as any)?.name;
     if (parentName !== forumChannelName) return;
 
-    // Compute tomorrow's date in 'Month DD YYYY' format
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    const now = new Date();
+    const utcTomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dateStr = utcTomorrow.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    });
 
-    const rules = `This is the daily drawing thread for ${dateStr}!\nPlease only post images in this thread\nReact with 🔥 to vote for an image to win\nIf you took longer than 15 minutes you can still post your drawing, just add a ⏲️ emoji and it won't be counted`;
+    const rules = `Welcome to the daily drawing thread for ${dateStr}!\n` +
+    "- Please only post images in this thread\n" +
+    "- React an image with :fire: (\\:fire\\:) to vote for it to win, you may vote as much as you'd like\n" +
+    "- If you went over time, react on your own image with :timer: (\\:timer\\:) and it won't be counted\n" +
+    "- You can post multiple entries, just keep them as separate replies in the thread\n" +
+    "- The votes will be counted and the winner announced at 04:00 UTC\n";
 
     try {
       await (thread as any).send(rules);
@@ -185,9 +194,9 @@ async function handleDeadlineCommand(interaction: ChatInputCommandInteraction) {
     const invoker = await guild.members.fetch(interaction.user.id).catch(() => null);
     if (!invoker) return interaction.reply({ content: "Unable to verify your permissions.", flags: MessageFlags.Ephemeral });
     const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
-      const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
-      if (!isAdmin && !canKick) {
-        return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
+    const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
+    if (!isAdmin && !canKick) {
+      return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
     }
     const forum = guild.channels.cache.find(
       (ch) => ch.type === 15 && ch.name === forumChannelName // 15 = GuildForum
