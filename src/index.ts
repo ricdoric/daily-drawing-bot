@@ -36,6 +36,15 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
+enum BotStatus {
+  OFF,
+  ON,
+}
+
+let botStatus = BotStatus.OFF; // Bot defaults to OFF
+
+console.log(`Bot status is set to: ${BotStatus[botStatus]}`);
+
 async function registerCommands() {
   const commands = [
     {
@@ -48,10 +57,22 @@ async function registerCommands() {
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
       dm_permission: false,
     },
+    {
+      name: "daily-bot-on",
+      description: "Turn the daily drawing bot ON (admin/mod only).",
+      default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
+      dm_permission: false,
+    },
+    {
+      name: "daily-bot-off",
+      description: "Turn the daily drawing bot OFF (admin/mod only).",
+      default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
+      dm_permission: false,
+    },
   ];
   const rest = new REST({ version: "10" }).setToken(token!);
   await rest.put(Routes.applicationGuildCommands(clientId!, guildId!), { body: commands });
-  console.log("Slash command /tally and /deadline registered.");
+  console.log("Slash command /tally, /deadline, /daily-bot-on and /daily-bot-off registered.");
 }
 
 client.once("clientReady", async () => {
@@ -67,10 +88,17 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.commandName === "deadline") {
     await handleDeadlineCommand(interaction);
   }
+  if (interaction.commandName === "daily-bot-on") {
+    await handleDailyBotOn(interaction);
+  }
+  if (interaction.commandName === "daily-bot-off") {
+    await handleDailyBotOff(interaction);
+  }
 });
 
 // Watch for new threads created in the forum channel and post the rules
 client.on("threadCreate", async (thread) => {
+  if (botStatus === BotStatus.OFF) return; // Do nothing if bot is OFF
   try {
     const parentName = (thread.parent as any)?.name;
     if (parentName !== forumChannelName) return;
@@ -85,11 +113,11 @@ client.on("threadCreate", async (thread) => {
     });
 
     const rules = `Welcome to the daily drawing thread for ${dateStr}!\n` +
-    "- Please only post images in this thread\n" +
-    "- React an image with :fire: (\\:fire\\:) to vote for it to win, you may vote as much as you'd like\n" +
-    "- If you went over time, react on your own image with :timer: (\\:timer\\:) and it won't be counted\n" +
-    "- You can post multiple entries, just keep them as separate replies in the thread\n" +
-    "- The votes will be counted and the winner announced at 04:00 UTC\n";
+      "- Please only post images in this thread\n" +
+      "- React an image with :fire: (\\:fire\\:) to vote for it to win, you may vote as much as you'd like\n" +
+      "- If you went over time, react on your own image with :timer: (\\:timer\\:) and it won't be counted\n" +
+      "- You can post multiple entries, just keep them as separate replies in the thread\n" +
+      "- The votes will be counted and the winner announced at 04:00 UTC\n";
 
     try {
       await (thread as any).send(rules);
@@ -188,6 +216,9 @@ function isImageMessage(msg: any): boolean {
 
 // Testing command, this will be replaced with a timed action with node-cron
 async function handleDeadlineCommand(interaction: ChatInputCommandInteraction) {
+  if (botStatus === BotStatus.OFF) {
+    return interaction.reply({ content: "Daily drawing bot is currently OFF." });
+  }
   try {
     const guild = interaction.guild;
     if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
@@ -326,3 +357,44 @@ async function handleDeadlineCommand(interaction: ChatInputCommandInteraction) {
 }
 
 client.login(token);
+
+// Command handlers to toggle bot status
+async function handleDailyBotOn(interaction: ChatInputCommandInteraction) {
+  try {
+    const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
+    const invoker = await guild.members.fetch(interaction.user.id).catch(() => null);
+    if (!invoker) return interaction.reply({ content: "Unable to verify your permissions.", flags: MessageFlags.Ephemeral });
+    const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
+    const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
+    if (!isAdmin && !canKick) {
+      return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
+    }
+    botStatus = BotStatus.ON;
+    console.log(`Bot status changed to: ${BotStatus[botStatus]} by ${interaction.user.tag}`);
+    await interaction.reply({ content: "Daily drawing bot is now ON.", flags: MessageFlags.Ephemeral });
+  } catch (e) {
+    console.error("Error toggling bot on:", e);
+    await interaction.reply({ content: "Failed to turn bot on.", flags: MessageFlags.Ephemeral });
+  }
+}
+
+async function handleDailyBotOff(interaction: ChatInputCommandInteraction) {
+  try {
+    const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
+    const invoker = await guild.members.fetch(interaction.user.id).catch(() => null);
+    if (!invoker) return interaction.reply({ content: "Unable to verify your permissions.", flags: MessageFlags.Ephemeral });
+    const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
+    const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
+    if (!isAdmin && !canKick) {
+      return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
+    }
+    botStatus = BotStatus.OFF;
+    console.log(`Bot status changed to: ${BotStatus[botStatus]} by ${interaction.user.tag}`);
+    await interaction.reply({ content: "Daily drawing bot is now OFF.", flags: MessageFlags.Ephemeral });
+  } catch (e) {
+    console.error("Error toggling bot off:", e);
+    await interaction.reply({ content: "Failed to turn bot off.", flags: MessageFlags.Ephemeral });
+  }
+}
