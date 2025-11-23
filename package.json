@@ -19,10 +19,12 @@
     "dev": "ts-node-dev src/index.ts"
   },
   "devDependencies": {
+    "@types/node-cron": "^3.0.11",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "discord.js": "^14.25.1",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "node-cron": "^3.0.3"
   }
 }
