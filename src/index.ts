@@ -13,9 +13,15 @@ import {
   GuildMember,
   ChannelType,
   TextChannel,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Interaction,
+  ButtonInteraction,
   MessageFlags,
 } from "discord.js";
 import cron from "node-cron";
+import cronParser from "cron-parser";
 import * as dotenv from "dotenv";
 
 dotenv.config();
@@ -64,21 +70,15 @@ async function registerCommands() {
       dm_permission: false,
     },
     {
-      name: "daily-bot-on",
-      description: "Turn the daily drawing bot ON (admin/mod only).",
-      default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
-      dm_permission: false,
-    },
-    {
-      name: "daily-bot-off",
-      description: "Turn the daily drawing bot OFF (admin/mod only).",
+      name: "daily-bot-status",
+      description: "Show the current daily-bot status and toggle it (interactive).",
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
       dm_permission: false,
     },
   ];
   const rest = new REST({ version: "10" }).setToken(token!);
   await rest.put(Routes.applicationGuildCommands(clientId!, guildId!), { body: commands });
-  console.log("Slash command /tally, /deadline, /daily-bot-on and /daily-bot-off registered.");
+  console.log("Slash commands registered: /tally, /deadline, /daily-bot-status.");
 }
 
 client.once("clientReady", async () => {
@@ -87,18 +87,35 @@ client.once("clientReady", async () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName === "tally") {
-    await handleTallyCommand(interaction);
-  }
-  if (interaction.commandName === "deadline") {
-    await handleDeadlineCommand(interaction);
-  }
-  if (interaction.commandName === "daily-bot-on") {
-    await handleDailyBotOn(interaction);
-  }
-  if (interaction.commandName === "daily-bot-off") {
-    await handleDailyBotOff(interaction);
+  try {
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "tally") {
+        await handleTallyCommand(interaction);
+        return;
+      }
+      if (interaction.commandName === "deadline") {
+        await handleDeadlineCommand(interaction);
+        return;
+      }
+      // /daily-bot-on and /daily-bot-off removed; use /daily-bot-status instead
+      if (interaction.commandName === "daily-bot-status") {
+        await handleDailyBotStatusCommand(interaction);
+        return;
+      }
+    } else if (interaction.isButton()) {
+      // handle toggle button
+      if ((interaction as ButtonInteraction).customId === "daily-bot-toggle") {
+        await handleDailyBotToggleButton(interaction as ButtonInteraction);
+        return;
+      }
+    }
+  } catch (e) {
+    console.error("Error handling interaction:", e);
+    try {
+      if (interaction && (interaction as any).reply) {
+        await (interaction as any).reply?.({ content: "An error occurred.", flags: MessageFlags.Ephemeral });
+      }
+    } catch { }
   }
 });
 
@@ -353,33 +370,141 @@ async function handleDeadlineCommand(interaction: ChatInputCommandInteraction) {
 
 client.login(token);
 
-// Command handlers to toggle bot status
-async function handleDailyBotOn(interaction: ChatInputCommandInteraction) {
+// Handle the /daily-bot-status command: show current status and a toggle button
+async function handleDailyBotStatusCommand(interaction: ChatInputCommandInteraction) {
   try {
-    const auth = await requireAdminOrMod(interaction);
-    if (!auth) return;
-    const { guild } = auth;
-    botStatus = BotStatus.ON;
-    console.log(`Bot status changed to: ${BotStatus[botStatus]} by ${interaction.user.tag}`);
-    await interaction.reply({ content: "Daily drawing bot is now ON.", flags: MessageFlags.Ephemeral });
+    const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
+    const statusLabel = botStatus === BotStatus.ON ? "ON" : "OFF";
+
+    const embed = new EmbedBuilder()
+      .setTitle("Daily Bot Status")
+      .setDescription(`The daily drawing bot is currently **${statusLabel}**.`)
+      .setColor(botStatus === BotStatus.ON ? 0x00ff00 : 0xff0000);
+
+    const schedule = buildStatusSchedule();
+    if ("error" in schedule) {
+      embed.addFields({ name: "Schedule", value: schedule.error });
+    } else {
+      const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
+      const scheduleLine = `Cron: ${cronSchedule}\nNext run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
+      embed.addFields({ name: "Schedule", value: scheduleLine });
+    }
+
+    const toggleLabel = botStatus === BotStatus.ON ? "Turn OFF" : "Turn ON";
+    const button = new ButtonBuilder().setCustomId("daily-bot-toggle").setLabel(toggleLabel).setStyle(ButtonStyle.Primary);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button as any);
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
   } catch (e) {
-    console.error("Error toggling bot on:", e);
-    await interaction.reply({ content: "Failed to turn bot on.", flags: MessageFlags.Ephemeral });
+    console.error("Error showing bot status:", e);
+    await interaction.reply({ content: "Failed to show bot status.", flags: MessageFlags.Ephemeral });
   }
 }
 
-async function handleDailyBotOff(interaction: ChatInputCommandInteraction) {
+// Handle button interaction to toggle bot status
+async function handleDailyBotToggleButton(interaction: ButtonInteraction) {
   try {
-    const auth = await requireAdminOrMod(interaction);
-    if (!auth) return;
-    const { guild } = auth;
-    botStatus = BotStatus.OFF;
-    console.log(`Bot status changed to: ${BotStatus[botStatus]} by ${interaction.user.tag}`);
-    await interaction.reply({ content: "Daily drawing bot is now OFF.", flags: MessageFlags.Ephemeral });
+    // require admin/mod for button toggle
+    const auth = await requireAdminOrModForInteraction(interaction);
+    if (!auth) return; // requireAdmin... will reply ephemerally on failure
+
+    // toggle
+    botStatus = botStatus === BotStatus.ON ? BotStatus.OFF : BotStatus.ON;
+    console.log(`Bot status toggled to ${BotStatus[botStatus]} by ${(interaction.user as any)?.tag || interaction.user.id}`);
+
+    // update the message embed and button label
+    const statusLabel = botStatus === BotStatus.ON ? "ON" : "OFF";
+    const embed = new EmbedBuilder()
+      .setTitle("Daily Bot Status")
+      .setDescription(`The daily drawing bot is currently **${statusLabel}**.`)
+      .setColor(botStatus === BotStatus.ON ? 0x00ff00 : 0xff0000);
+
+
+    const schedule = buildStatusSchedule();
+    if ("error" in schedule) {
+      embed.addFields({ name: "Schedule", value: schedule.error });
+    } else {
+      const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
+      const scheduleLine = `Cron: ${cronSchedule}\nNext run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
+      embed.addFields({ name: "Schedule", value: scheduleLine });
+    }
+
+    const toggleLabel = botStatus === BotStatus.ON ? "Turn OFF" : "Turn ON";
+    const button = new ButtonBuilder().setCustomId("daily-bot-toggle").setLabel(toggleLabel).setStyle(ButtonStyle.Primary);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button as any);
+
+    // Update the original message where the button was pressed
+    await interaction.update({ embeds: [embed], components: [row] });
   } catch (e) {
-    console.error("Error toggling bot off:", e);
-    await interaction.reply({ content: "Failed to turn bot off.", flags: MessageFlags.Ephemeral });
+    console.error("Error handling toggle button:", e);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Failed to toggle bot status.", ephemeral: true });
+      }
+    } catch { }
   }
+}
+
+function buildStatusSchedule():
+  | { error: string }
+  | {
+      cronSchedule: string;
+      nextUtc: Date;
+      unixSeconds: number;
+      discordLocal: string;
+      utcStr: string;
+      hours: number;
+      minutes: number;
+    } {
+  const cronSchedule = process.env.CRON_SCHEDULE || "0 4 * * *";
+  try {
+    if (!cron.validate(cronSchedule)) return { error: `Configured cron expression '${cronSchedule}' is invalid.` };
+
+    const interval = cronParser.parseExpression(cronSchedule, { tz: "UTC" });
+    const nextUtc = interval.next().toDate();
+    const unixSeconds = Math.floor(nextUtc.getTime() / 1000);
+
+    // Discord timestamp for local display (Discord will render according to viewer timezone)
+    const discordLocal = `<t:${unixSeconds}>`;
+
+    // UTC formatted string (human readable)
+    const utcStr = nextUtc.toLocaleString("en-US", { timeZone: "UTC", hour12: false });
+
+    const now = new Date();
+    const diffMs = nextUtc.getTime() - now.getTime();
+    const positiveDiff = Math.max(0, diffMs);
+    const hours = Math.floor(positiveDiff / (1000 * 60 * 60));
+    const minutes = Math.floor((positiveDiff % (1000 * 60 * 60)) / (1000 * 60));
+
+    return { cronSchedule, nextUtc, unixSeconds, discordLocal, utcStr, hours, minutes };
+  } catch (e) {
+    return { error: `Unable to compute next run for cron '${cronSchedule}'.` };
+  }
+}
+async function requireAdminOrModForInteraction(interaction: Interaction): Promise<{ guild: Guild; invoker: GuildMember } | null> {
+  const guild = interaction.guild as Guild | null;
+  if (!guild) {
+    try { await (interaction as any).reply?.({ content: "Guild not found.", ephemeral: true }); } catch { }
+    return null;
+  }
+  const user = (interaction as any).user as any;
+  if (!user) {
+    try { await (interaction as any).reply?.({ content: "Unable to verify your permissions.", ephemeral: true }); } catch { }
+    return null;
+  }
+  const invoker = await guild.members.fetch(user.id).catch(() => null);
+  if (!invoker) {
+    try { await (interaction as any).reply?.({ content: "Unable to verify your permissions.", ephemeral: true }); } catch { }
+    return null;
+  }
+  const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
+  const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
+  if (!isAdmin && !canKick) {
+    try { await (interaction as any).reply?.({ content: "You must be admin or mod.", ephemeral: true }); } catch { }
+    return null;
+  }
+  return { guild, invoker };
 }
 
 // Helper: fetch guild and invoker (member) and reply with ephemeral errors if missing
@@ -421,36 +546,36 @@ try {
       cronSchedule,
       async () => {
         console.log(`Running scheduled daily deadline job (${cronSchedule} UTC)`);
-      for (const [id, g] of client.guilds.cache) {
-        try {
-          const guild = await client.guilds.fetch(id).catch(() => null);
-          if (!guild) continue;
-          if (botStatus === BotStatus.OFF) {
-            console.log(`Skipping guild ${guild.id} because botStatus is OFF`);
-            continue;
-          }
-          const embed = await createDailyDeadlineMessage(guild);
-          if (!embed) {
-            console.log(`No results to announce for guild ${guild.id}`);
-            continue;
-          }
-          const chat = guild.channels.cache.find(
-            (ch) => ch.type === ChannelType.GuildText && ch.name === chatChannelName
-          ) as TextChannel | undefined;
-          if (!chat) {
-            console.log(`Chat channel '${chatChannelName}' not found in guild ${guild.id}`);
-            continue;
-          }
+        for (const [id, g] of client.guilds.cache) {
           try {
-            await chat.send({ embeds: [embed] });
-            console.log(`Posted daily results in guild ${guild.id} to text channel '${chatChannelName}'`);
+            const guild = await client.guilds.fetch(id).catch(() => null);
+            if (!guild) continue;
+            if (botStatus === BotStatus.OFF) {
+              console.log(`Skipping guild ${guild.id} because botStatus is OFF`);
+              continue;
+            }
+            const embed = await createDailyDeadlineMessage(guild);
+            if (!embed) {
+              console.log(`No results to announce for guild ${guild.id}`);
+              continue;
+            }
+            const chat = guild.channels.cache.find(
+              (ch) => ch.type === ChannelType.GuildText && ch.name === chatChannelName
+            ) as TextChannel | undefined;
+            if (!chat) {
+              console.log(`Chat channel '${chatChannelName}' not found in guild ${guild.id}`);
+              continue;
+            }
+            try {
+              await chat.send({ embeds: [embed] });
+              console.log(`Posted daily results in guild ${guild.id} to text channel '${chatChannelName}'`);
+            } catch (e) {
+              console.error(`Failed to post daily results in guild ${guild.id}:`, e);
+            }
           } catch (e) {
-            console.error(`Failed to post daily results in guild ${guild.id}:`, e);
+            console.error("Error running scheduled job for guild:", id, e);
           }
-        } catch (e) {
-          console.error("Error running scheduled job for guild:", id, e);
         }
-      }
       },
       { timezone: "UTC" }
     );
