@@ -23,8 +23,8 @@ dotenv.config();
 const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.GUILD_ID;
 const clientId = process.env.CLIENT_ID;
-const forumChannelName = process.env.FORUM_CHANNEL_NAME || "15-minute-daily-images";
-const chatChannelName = process.env.CHAT_CHANNEL_NAME || "daily-drawings";
+const forumChannelName = process.env.FORUM_CHANNEL_NAME;
+const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 
 if (!token || !guildId || !clientId) {
   throw new Error("Missing required environment variables.");
@@ -55,7 +55,7 @@ async function registerCommands() {
   const commands = [
     {
       name: "tally",
-      description: "Count emoji reactions on the most recent forum post in 15-minute-daily-images.",
+      description: "Count emoji reactions on the most recent forum post in selected channel.",
     },
     {
       name: "deadline",
