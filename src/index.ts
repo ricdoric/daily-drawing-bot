@@ -53,7 +53,8 @@ enum BotStatus {
   ON,
 }
 
-let botStatus = BotStatus.OFF; // Bot defaults to OFF
+// let botStatus = BotStatus.OFF; // TODO: Bot defaults to OFF
+let botStatus = BotStatus.ON; // on during development
 
 console.log(`Bot status is set to: ${BotStatus[botStatus]}`);
 
@@ -64,7 +65,7 @@ async function registerCommands() {
       description: "Count emoji reactions on the most recent forum post in selected channel.",
     },
     {
-      name: "deadline",
+      name: "daily-deadline",
       description: "Announce voting deadline and post winner, 2nd and 3rd place (by fire reactions).",
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
       dm_permission: false,
@@ -78,7 +79,7 @@ async function registerCommands() {
   ];
   const rest = new REST({ version: "10" }).setToken(token!);
   await rest.put(Routes.applicationGuildCommands(clientId!, guildId!), { body: commands });
-  console.log("Slash commands registered: /tally, /deadline, /daily-bot-status.");
+  console.log("Slash commands registered: /tally, /daily-deadline, /daily-bot-status.");
 }
 
 client.once("clientReady", async () => {
@@ -93,8 +94,8 @@ client.on("interactionCreate", async (interaction) => {
         await handleTallyCommand(interaction);
         return;
       }
-      if (interaction.commandName === "deadline") {
-        await handleDeadlineCommand(interaction);
+      if (interaction.commandName === "daily-deadline") {
+        await handleDailyDeadlineCommand(interaction);
         return;
       }
       // /daily-bot-on and /daily-bot-off removed; use /daily-bot-status instead
@@ -341,7 +342,7 @@ function isImageMessage(msg: any): boolean {
 }
 
 // Testing command, this will be replaced with a timed action with node-cron
-async function handleDeadlineCommand(interaction: ChatInputCommandInteraction) {
+async function handleDailyDeadlineCommand(interaction: ChatInputCommandInteraction) {
   if (botStatus === BotStatus.OFF) {
     return interaction.reply({ content: "Daily drawing bot is currently OFF." });
   }

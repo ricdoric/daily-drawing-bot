@@ -9,10 +9,8 @@ These features will be the base functions of the bot
 - When user creates new forum thread for the next daily, the bot posts the rules as the top post
 - Mod commands
     - /daily-deadline - forces a tally to occur if the bot was offline during the deadline time
-    - /daily-off - disables bot
-    - /daily-on - enables bot
-    - /daily-status - responds whether the bot is either enabled or disabled
-    - The bot will default to being disabled if the server restarts or an error occurs, as to not have issues and ping winners more than once
+    - /daily-status - shows the scheduled deadline, lets you toggle the bot on or off
+    - The bot will default to being disabled if the bot's server restarts or an error occurs, as to not have issues and ping winners more than once
 
 ## Future Features
 These are ideas for features in the future, they are not currently implemented
