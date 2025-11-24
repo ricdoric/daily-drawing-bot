@@ -137,9 +137,9 @@ client.on("threadCreate", async (thread) => {
 
     const rules = `Welcome to the daily drawing thread for ${dateStr}!\n` +
       "- Please only post images in this thread\n" +
-      "- React an image with :fire: (\\:fire\\:) to vote for it to win, you may vote as much as you'd like\n" +
-      "- If you went over time, react on your own image with :timer: (\\:timer\\:) and it won't be counted\n" +
-      "- You can post multiple entries, just keep them as separate replies in the thread\n" +
+      "- React an image with \\:fire\\: :fire: to vote for it to win, you may vote as much as you'd like\n" +
+      "- If your drawing went over time, react on it with \\:timer\\: :timer: and it won't be counted\n" +
+      "- You can post multiple drawings, just keep them as separate replies in the thread\n" +
       "- The votes will be counted and the winner announced at 04:00 UTC\n";
 
     try {
@@ -387,7 +387,7 @@ async function handleDailyBotStatusCommand(interaction: ChatInputCommandInteract
       embed.addFields({ name: "Schedule", value: schedule.error });
     } else {
       const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
-      const scheduleLine = `Cron: ${cronSchedule}\nNext run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
+      const scheduleLine = `Deadline (UTC): ${utcStr}\nDeadline (local time): ${discordLocal}\nTime until deadline: ${hours}h ${minutes}m`;
       embed.addFields({ name: "Schedule", value: scheduleLine });
     }
 
