@@ -23,14 +23,16 @@ import {
 import cron from "node-cron";
 import cronParser from "cron-parser";
 import * as dotenv from "dotenv";
-
 dotenv.config();
+
+import { isMarkedOvertime, countFireReactors, userHasModPermission } from "./reactionCheck";
 
 const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.GUILD_ID;
 const clientId = process.env.CLIENT_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME;
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
+// const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
 if (!token || !guildId || !clientId) {
   throw new Error("Missing required environment variables.");
@@ -90,10 +92,6 @@ client.once("clientReady", async () => {
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === "tally") {
-        await handleTallyCommand(interaction);
-        return;
-      }
       if (interaction.commandName === "daily-deadline") {
         await handleDailyDeadlineCommand(interaction);
         return;
@@ -154,63 +152,6 @@ client.on("threadCreate", async (thread) => {
   }
 });
 
-// Old testing command
-async function handleTallyCommand(interaction: ChatInputCommandInteraction) {
-  try {
-    const guild = interaction.guild;
-    if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
-    const forum = guild.channels.cache.find(
-      (ch) => ch.type === 15 && ch.name === forumChannelName // 15 = GuildForum
-    ) as ForumChannel | undefined;
-    if (!forum)
-      return interaction.reply({ content: `Forum channel '${forumChannelName}' not found.`, flags: MessageFlags.Ephemeral });
-    // Fetch the most recent thread (post) in the forum
-    const threads = await forum.threads.fetchActive();
-    const threadArr = Array.from(threads.threads.values());
-    threadArr.sort((a: AnyThreadChannel, b: AnyThreadChannel) => {
-      const aTime = a.createdTimestamp ?? 0;
-      const bTime = b.createdTimestamp ?? 0;
-      return bTime - aTime;
-    });
-    const latestThread = threadArr[0];
-    if (!latestThread) return interaction.reply({ content: "No posts found in the forum.", flags: MessageFlags.Ephemeral });
-    // Fetch all messages in the thread (the post and all replies)
-    const allMessages = await latestThread.messages.fetch({ limit: 100 });
-    // Exclude the first message (the post itself), only tally replies
-    const replies = Array.from(allMessages.values()).filter((msg, idx, arr) => idx !== arr.length - 1);
-    if (replies.length === 0) {
-      return interaction.reply({ content: "No replies found in the most recent post." });
-    }
-    const replyTallies = await Promise.all(
-      replies.map(async (reply) => {
-        // Only count the fire emoji (:fire:). For custom emojis named 'fire' also accept that name.
-        let uniqueUserIds = new Set<string>();
-        for (const reaction of reply.reactions.cache.values()) {
-          try {
-            const emojiName = reaction.emoji.name;
-            if (emojiName !== "🔥" && emojiName?.toLowerCase() !== "fire") continue;
-            const users = await reaction.users.fetch();
-            users.forEach((user) => {
-              // Skip bots and the original reply author (don't count the poster's own fire reaction)
-              if (!user.bot && user.id !== (reply.author?.id ?? "")) uniqueUserIds.add(user.id);
-            });
-          } catch (e) {
-            // ignore fetch errors for individual reactions
-          }
-        }
-        const username = reply.author?.username || "Unknown";
-        return `User: ${username}\nMessage ID: ${reply.id}\nFire Reactors: ${uniqueUserIds.size}`;
-      })
-    );
-    await interaction.reply({
-      content: `🔥 tally for replies to the most recent post in '${forumChannelName}':\n\n${replyTallies.join("\n\n")}`,
-    });
-  } catch (err) {
-    console.error(err);
-    await interaction.reply({ content: "An error occurred while tallying reactions.", flags: MessageFlags.Ephemeral });
-  }
-}
-
 // Compute the deadline embed for a given guild. Returns EmbedBuilder or null if nothing to announce.
 async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | null> {
   try {
@@ -240,38 +181,12 @@ async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | 
       const author = reply.author;
       if (!author) continue;
       if (!isImageMessage(reply)) continue;
-      try {
-        for (const reactCheck of reply.reactions.cache.values()) {
-          try {
-            const name = reactCheck.emoji.name;
-            const isTimerEmoji =
-              name === "⏱️" || name === "⏲️" || (name && name.toLowerCase().includes("timer")) || (name && name.toLowerCase().includes("stopwatch"));
-            if (!isTimerEmoji) continue;
-            const usersForTimer = await reactCheck.users.fetch();
-            if (usersForTimer.has(reply.author?.id ?? "")) {
-              throw new Error("SKIP_REPLY_TIMER");
-            }
-          } catch (e) {
-            if ((e as Error).message === "SKIP_REPLY_TIMER") throw e;
-          }
-        }
-      } catch (e) {
-        if ((e as Error).message === "SKIP_REPLY_TIMER") continue;
-      }
-      let uniqueUserIds = new Set<string>();
-      for (const reaction of reply.reactions.cache.values()) {
-        try {
-          const emojiName = reaction.emoji.name;
-          if (emojiName !== "🔥" && emojiName?.toLowerCase() !== "fire") continue;
-          const users = await reaction.users.fetch();
-          users.forEach((user) => {
-            if (!user.bot && user.id !== (reply.author?.id ?? "")) uniqueUserIds.add(user.id);
-          });
-        } catch (e) {
-          // ignore fetch errors
-        }
-      }
-      authorCounts.push({ id: author.id, username: author.username || "Unknown", count: uniqueUserIds.size });
+
+      // Skip if marked as overtime
+      if (await isMarkedOvertime(reply)) continue;
+
+      const fireCount = await countFireReactors(reply);
+      authorCounts.push({ id: author.id, username: author.username || "Unknown", count: fireCount });
     }
 
     // Aggregate by author id
@@ -351,9 +266,7 @@ async function handleDailyDeadlineCommand(interaction: ChatInputCommandInteracti
     if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
     const invoker = await guild.members.fetch(interaction.user.id).catch(() => null);
     if (!invoker) return interaction.reply({ content: "Unable to verify your permissions.", flags: MessageFlags.Ephemeral });
-    const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
-    const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
-    if (!isAdmin && !canKick) {
+    if (!userHasModPermission(invoker)) {
       return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
     }
     const forum = guild.channels.cache.find(
@@ -374,8 +287,10 @@ client.login(token);
 // Handle the /daily-bot-status command: show current status and a toggle button
 async function handleDailyBotStatusCommand(interaction: ChatInputCommandInteraction) {
   try {
-    const guild = interaction.guild;
-    if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
+    const auth = await getGuildAndInvoker(interaction);
+    if (!auth) return;
+    const { guild, invoker } = auth;
+    if (!userHasModPermission(invoker)) return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
     const statusLabel = botStatus === BotStatus.ON ? "ON" : "OFF";
 
     const embed = new EmbedBuilder()
@@ -499,9 +414,7 @@ async function requireAdminOrModForInteraction(interaction: Interaction): Promis
     try { await (interaction as any).reply?.({ content: "Unable to verify your permissions.", ephemeral: true }); } catch { }
     return null;
   }
-  const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
-  const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
-  if (!isAdmin && !canKick) {
+  if (!userHasModPermission(invoker)) {
     try { await (interaction as any).reply?.({ content: "You must be admin or mod.", ephemeral: true }); } catch { }
     return null;
   }
@@ -518,20 +431,6 @@ async function getGuildAndInvoker(interaction: ChatInputCommandInteraction): Pro
   const invoker = await guild.members.fetch(interaction.user.id).catch(() => null);
   if (!invoker) {
     await interaction.reply({ content: "Unable to verify your permissions.", flags: MessageFlags.Ephemeral });
-    return null;
-  }
-  return { guild, invoker };
-}
-
-// Helper: ensure the invoker is admin or has KickMembers permission; replies ephemerally on failure
-async function requireAdminOrMod(interaction: ChatInputCommandInteraction): Promise<{ guild: Guild; invoker: GuildMember } | null> {
-  const auth = await getGuildAndInvoker(interaction);
-  if (!auth) return null;
-  const { guild, invoker } = auth;
-  const isAdmin = invoker.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
-  const canKick = invoker.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
-  if (!isAdmin && !canKick) {
-    await interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
     return null;
   }
   return { guild, invoker };
