@@ -11,6 +11,8 @@ import {
   AnyThreadChannel,
   Guild,
   GuildMember,
+  ChannelType,
+  TextChannel,
   MessageFlags,
 } from "discord.js";
 import cron from "node-cron";
@@ -22,6 +24,7 @@ const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.GUILD_ID;
 const clientId = process.env.CLIENT_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME || "15-minute-daily-images";
+const chatChannelName = process.env.CHAT_CHANNEL_NAME || "daily-drawings";
 
 if (!token || !guildId || !clientId) {
   throw new Error("Missing required environment variables.");
@@ -162,7 +165,7 @@ async function handleTallyCommand(interaction: ChatInputCommandInteraction) {
     }
     const replyTallies = await Promise.all(
       replies.map(async (reply) => {
-        // Only count the fire emoji (🔥). For custom emojis named 'fire' also accept that name.
+        // Only count the fire emoji (:fire:). For custom emojis named 'fire' also accept that name.
         let uniqueUserIds = new Set<string>();
         for (const reaction of reply.reactions.cache.values()) {
           try {
@@ -191,7 +194,7 @@ async function handleTallyCommand(interaction: ChatInputCommandInteraction) {
 }
 
 // Compute the deadline embed for a given guild. Returns EmbedBuilder or null if nothing to announce.
-async function computeDeadlineEmbedForGuild(guild: Guild): Promise<EmbedBuilder | null> {
+async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | null> {
   try {
     const forum = guild.channels.cache.find((ch) => ch.type === 15 && ch.name === forumChannelName) as ForumChannel | undefined;
     if (!forum) return null;
@@ -339,7 +342,7 @@ async function handleDeadlineCommand(interaction: ChatInputCommandInteraction) {
       (ch) => ch.type === 15 && ch.name === forumChannelName // 15 = GuildForum
     ) as ForumChannel | undefined;
     if (!forum) return interaction.reply({ content: `Forum channel '${forumChannelName}' not found.`, flags: MessageFlags.Ephemeral });
-    const embed = await computeDeadlineEmbedForGuild(guild);
+    const embed = await createDailyDeadlineMessage(guild);
     if (!embed) return interaction.reply({ content: "No results to report for the most recent post.", flags: MessageFlags.Ephemeral });
     await interaction.reply({ embeds: [embed] });
   } catch (err) {
@@ -408,12 +411,16 @@ async function requireAdminOrMod(interaction: ChatInputCommandInteraction): Prom
   return { guild, invoker };
 }
 
-// Schedule daily job at 04:00 UTC to run the deadline logic across guilds
+// Schedule daily job (configured by CRON_SCHEDULE env var) to run the deadline logic across guilds
 try {
-  cron.schedule(
-    "0 4 * * *",
-    async () => {
-      console.log("Running scheduled daily deadline job (04:00 UTC)");
+  const cronSchedule = process.env.CRON_SCHEDULE || "0 4 * * *";
+  if (!cron.validate(cronSchedule)) {
+    console.error(`CRON_SCHEDULE '${cronSchedule}' is not a valid cron expression; skipping scheduler.`);
+  } else {
+    cron.schedule(
+      cronSchedule,
+      async () => {
+        console.log(`Running scheduled daily deadline job (${cronSchedule} UTC)`);
       for (const [id, g] of client.guilds.cache) {
         try {
           const guild = await client.guilds.fetch(id).catch(() => null);
@@ -422,19 +429,21 @@ try {
             console.log(`Skipping guild ${guild.id} because botStatus is OFF`);
             continue;
           }
-          const embed = await computeDeadlineEmbedForGuild(guild);
+          const embed = await createDailyDeadlineMessage(guild);
           if (!embed) {
             console.log(`No results to announce for guild ${guild.id}`);
             continue;
           }
-          const forum = guild.channels.cache.find((ch) => ch.type === 15 && ch.name === forumChannelName) as ForumChannel | undefined;
-          if (!forum) {
-            console.log(`Forum channel '${forumChannelName}' not found in guild ${guild.id}`);
+          const chat = guild.channels.cache.find(
+            (ch) => ch.type === ChannelType.GuildText && ch.name === chatChannelName
+          ) as TextChannel | undefined;
+          if (!chat) {
+            console.log(`Chat channel '${chatChannelName}' not found in guild ${guild.id}`);
             continue;
           }
           try {
-            await (forum as any).send({ embeds: [embed] });
-            console.log(`Posted daily results in guild ${guild.id}`);
+            await chat.send({ embeds: [embed] });
+            console.log(`Posted daily results in guild ${guild.id} to text channel '${chatChannelName}'`);
           } catch (e) {
             console.error(`Failed to post daily results in guild ${guild.id}:`, e);
           }
@@ -442,9 +451,11 @@ try {
           console.error("Error running scheduled job for guild:", id, e);
         }
       }
-    },
-    { timezone: "UTC" }
-  );
+      },
+      { timezone: "UTC" }
+    );
+    console.log(`Scheduled daily job with cron expression '${cronSchedule}' (UTC)`);
+  }
 } catch (e) {
   console.error("Failed to schedule cron job:", e);
 }
