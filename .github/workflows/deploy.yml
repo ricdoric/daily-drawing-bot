@@ -37,6 +37,7 @@ jobs:
         rsync -avz --delete \
         --exclude='.git' \
         --exclude='node_modules' \
+        --exclude='.env' \
         ./ \
         ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.SERVER_PATH }}
 
