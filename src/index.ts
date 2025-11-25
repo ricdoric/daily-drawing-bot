@@ -32,6 +32,7 @@ const guildId = process.env.GUILD_ID;
 const clientId = process.env.CLIENT_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME;
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
+const pingUsersFlag = process.env.PING_USERS === "true";
 // const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
 if (!token || !guildId || !clientId) {
@@ -63,10 +64,6 @@ console.log(`Bot status is set to: ${BotStatus[botStatus]}`);
 async function registerCommands() {
   const commands = [
     {
-      name: "tally",
-      description: "Count emoji reactions on the most recent forum post in selected channel.",
-    },
-    {
       name: "daily-deadline",
       description: "Announce voting deadline and post winner, 2nd and 3rd place (by fire reactions).",
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
@@ -81,7 +78,7 @@ async function registerCommands() {
   ];
   const rest = new REST({ version: "10" }).setToken(token!);
   await rest.put(Routes.applicationGuildCommands(clientId!, guildId!), { body: commands });
-  console.log("Slash commands registered: /tally, /daily-deadline, /daily-bot-status.");
+  console.log("Slash commands registered: /daily-deadline, /daily-bot-status.");
 }
 
 client.once("clientReady", async () => {
@@ -180,6 +177,8 @@ async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | 
     for (const reply of replies) {
       const author = reply.author;
       if (!author) continue;
+
+      // Skip non-image messages
       if (!isImageMessage(reply)) continue;
 
       // Skip if marked as overtime
@@ -207,18 +206,33 @@ async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | 
     const secondObj = second ?? { id: "none", username: "none", count: 0 };
     const thirdObj = third ?? { id: "none", username: "none", count: 0 };
 
-    let winnerName = winnerObj.username || "none";
-    if (winner) {
+    // Helper: fetch a member's display name if available, otherwise fall back to username
+    async function fetchDisplayName(id: string, fallback: string): Promise<string> {
+      if (!id || id === "none") return fallback || "none";
       try {
-        const member = await guild.members.fetch(winnerObj.id);
-        if (member && member.displayName) winnerName = member.displayName;
-      } catch (e) { }
+        const member = await guild.members.fetch(id).catch(() => null);
+        return (member && member.displayName) ? member.displayName : (fallback || "none");
+      } catch {
+        return fallback || "none";
+      }
     }
+
+    const [winnerName, secondName, thirdName] = await Promise.all([
+      fetchDisplayName(winnerObj.id, winnerObj.username),
+      fetchDisplayName(secondObj.id, secondObj.username),
+      fetchDisplayName(thirdObj.id, thirdObj.username),
+    ]);
 
     const fields: { name: string; value: string; inline?: boolean }[] = [];
     fields.push({ name: `Rank`, value: `1st\n2nd\n3rd`, inline: true });
     const winnerMention = winnerObj.id !== "none" ? `<@${winnerObj.id}>` : "none";
-    fields.push({ name: `Name`, value: `${winnerMention}\n${secondObj.username}\n${thirdObj.username}`, inline: true });
+
+    // Check env var for ping users flag
+    if (pingUsersFlag === true) {
+      fields.push({ name: `Name`, value: `${winnerMention}\n${secondName}\n${thirdName}`, inline: true });
+    } else {
+      fields.push({ name: `Name`, value: `${winnerName}\n${secondName}\n${thirdName}`, inline: true });
+    }
     fields.push({ name: `:fire:`, value: `${winnerObj.count}\n${secondObj.count}\n${thirdObj.count}`, inline: true });
 
     const embed = new EmbedBuilder().setTitle("15 minute daily results are in!").addFields(fields as any).setColor(0xffa500);
@@ -365,14 +379,14 @@ async function handleDailyBotToggleButton(interaction: ButtonInteraction) {
 function buildStatusSchedule():
   | { error: string }
   | {
-      cronSchedule: string;
-      nextUtc: Date;
-      unixSeconds: number;
-      discordLocal: string;
-      utcStr: string;
-      hours: number;
-      minutes: number;
-    } {
+    cronSchedule: string;
+    nextUtc: Date;
+    unixSeconds: number;
+    discordLocal: string;
+    utcStr: string;
+    hours: number;
+    minutes: number;
+  } {
   const cronSchedule = process.env.CRON_SCHEDULE || "0 4 * * *";
   try {
     if (!cron.validate(cronSchedule)) return { error: `Configured cron expression '${cronSchedule}' is invalid.` };
@@ -398,6 +412,7 @@ function buildStatusSchedule():
     return { error: `Unable to compute next run for cron '${cronSchedule}'.` };
   }
 }
+
 async function requireAdminOrModForInteraction(interaction: Interaction): Promise<{ guild: Guild; invoker: GuildMember } | null> {
   const guild = interaction.guild as Guild | null;
   if (!guild) {

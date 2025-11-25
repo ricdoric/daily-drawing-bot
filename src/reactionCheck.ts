@@ -72,10 +72,7 @@ async function countFireReactors(reply: Message<true>): Promise<number> {
  * Check if a user has mod permissions (either specified mod role or kick permission).
  */
 function userHasModPermission(member: GuildMember | null): boolean {
-  console.log(`Checking mod permissions for member: ${member?.user.tag ?? "null"}`);
   if (!member) return false;
-
-  console.log(`Mod roles to check: ${modRoles.join(", ")}`);
 
   // Check for kick permission
   const canKick = member.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
@@ -88,7 +85,6 @@ function userHasModPermission(member: GuildMember | null): boolean {
   // Check for mod roles
   if (modRoles.length > 0) {
     for (const role of member.roles.cache.values()) {
-      console.log(`Checking role: ${role.name} (${role.id}) against mod roles: ${modRoles.join(", ")}`);
       if (modRoles.includes(role.id) || modRoles.includes(role.name)) {
         return true;
       }
