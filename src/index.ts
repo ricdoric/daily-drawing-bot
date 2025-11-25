@@ -225,18 +225,25 @@ async function buildDailyResultsMessage(guild: Guild): Promise<EmbedBuilder | nu
     ]);
 
     const fields: { name: string; value: string; inline?: boolean }[] = [];
-    fields.push({ name: `Rank`, value: `1st\n2nd\n3rd`, inline: true });
     const winnerMention = winnerObj.id !== "none" ? `<@${winnerObj.id}>` : "none";
 
     // Check env var for ping users flag
-    if (pingUsersFlag === true) {
-      fields.push({ name: `Name`, value: `${winnerMention}\n${secondName}\n${thirdName}`, inline: true });
-    } else {
-      fields.push({ name: `Name`, value: `${winnerName}\n${secondName}\n${thirdName}`, inline: true });
-    }
-    fields.push({ name: `:fire:`, value: `${winnerObj.count}\n${secondObj.count}\n${thirdObj.count}`, inline: true });
+    let winnerPingOrNot = winnerName;
+    if (pingUsersFlag) winnerPingOrNot = winnerMention;
+    const fieldValue = `${winnerPingOrNot}\n\n:fire: ` +
+      `${secondObj.count}\n${secondName}\n\n:fire: ` +
+      `${thirdObj.count}\n${thirdName}`;
+    fields.push({ name: `:fire: ${winnerObj.count}`, value: fieldValue });
 
-    const embed = new EmbedBuilder().setTitle("15 minute daily results are in!").addFields(fields as any).setColor(0xffa500);
+    const footer = winnerObj.id !== "none" 
+      ? `Congratulations ${winnerName}! Please create a forum post with a new theme!` 
+      : "No winner this round!";
+    
+    const embed = new EmbedBuilder()
+      .setTitle("15 Minute Daily Drawing Results")
+      .addFields(fields as any)
+      .setColor(0xffa500)
+      .setFooter({ text: footer });
     return embed;
   } catch (err) {
     console.error("Error computing deadline for guild:", guild.id, err);
