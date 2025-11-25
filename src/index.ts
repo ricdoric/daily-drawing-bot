@@ -149,8 +149,8 @@ client.on("threadCreate", async (thread) => {
   }
 });
 
-// Compute the deadline embed for a given guild. Returns EmbedBuilder or null if nothing to announce.
-async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | null> {
+// Tally the votes and build the daily drawing results message embed
+async function buildDailyResultsMessage(guild: Guild): Promise<EmbedBuilder | null> {
   try {
     const forum = guild.channels.cache.find((ch) => ch.type === 15 && ch.name === forumChannelName) as ForumChannel | undefined;
     if (!forum) return null;
@@ -168,12 +168,13 @@ async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | 
 
     // Fetch all messages in the thread (the post and all replies)
     const allMessages = await latestThread.messages.fetch({ limit: 100 });
+
     // Exclude the first message (the post itself), only consider replies
     const replies = Array.from(allMessages.values()).filter((msg, idx, arr) => idx !== arr.length - 1);
     if (replies.length === 0) return null;
 
     // Compute fire-react counts per reply author (only image replies)
-    const authorCounts: { id: string; username: string; count: number }[] = [];
+    const drawingEntries: { id: string; username: string; count: number }[] = [];
     for (const reply of replies) {
       const author = reply.author;
       if (!author) continue;
@@ -185,14 +186,14 @@ async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | 
       if (await isMarkedOvertime(reply)) continue;
 
       const fireCount = await countFireReactors(reply);
-      authorCounts.push({ id: author.id, username: author.username || "Unknown", count: fireCount });
+      drawingEntries.push({ id: author.id, username: author.username || "Unknown", count: fireCount });
     }
 
-    // Aggregate by author id
+    // If user has multiple drawings, take the max fire count among them
     const agg = new Map<string, { id: string; username: string; count: number }>();
-    for (const a of authorCounts) {
+    for (const a of drawingEntries) {
       const prev = agg.get(a.id);
-      if (prev) prev.count += a.count;
+      if (prev) prev.count = Math.max(prev.count, a.count);
       else agg.set(a.id, { ...a });
     }
 
@@ -243,6 +244,23 @@ async function createDailyDeadlineMessage(guild: Guild): Promise<EmbedBuilder | 
   }
 }
 
+// function createDailyResultsEmbed(first, second, third, ping: boolean = true): EmbedBuilder {
+//   const fields: { name: string; value: string; inline?: boolean }[] = [];
+//   fields.push({ name: `Rank`, value: `1st\n2nd\n3rd`, inline: true });
+//   const firstMention = first.id !== "none" ? `<@${first.id}>` : "none";
+
+//   // Check env var for ping users flag
+//   if (ping === true) {
+//     fields.push({ name: `Name`, value: `${firstMention}\n${second.username}\n${third.username}`, inline: true });
+//   } else {
+//     fields.push({ name: `Name`, value: `${first.username}\n${second.username}\n${third.username}`, inline: true });
+//   }
+//   fields.push({ name: `:fire:`, value: `${first.count}\n${second.count}\n${third.count}`, inline: true });
+
+//   const embed = new EmbedBuilder().setTitle("15 Minute Daily Results").addFields(fields as any).setColor(0xffa500);
+//   return embed;
+// }
+
 // Return true if the message appears to be an image reply (attachment, embed image, or image URL)
 function isImageMessage(msg: any): boolean {
   try {
@@ -287,7 +305,7 @@ async function handleDailyDeadlineCommand(interaction: ChatInputCommandInteracti
       (ch) => ch.type === 15 && ch.name === forumChannelName // 15 = GuildForum
     ) as ForumChannel | undefined;
     if (!forum) return interaction.reply({ content: `Forum channel '${forumChannelName}' not found.`, flags: MessageFlags.Ephemeral });
-    const embed = await createDailyDeadlineMessage(guild);
+    const embed = await buildDailyResultsMessage(guild);
     if (!embed) return interaction.reply({ content: "No results to report for the most recent post.", flags: MessageFlags.Ephemeral });
     await interaction.reply({ embeds: [embed] });
   } catch (err) {
@@ -469,7 +487,7 @@ try {
               console.log(`Skipping guild ${guild.id} because botStatus is OFF`);
               continue;
             }
-            const embed = await createDailyDeadlineMessage(guild);
+            const embed = await buildDailyResultsMessage(guild);
             if (!embed) {
               console.log(`No results to announce for guild ${guild.id}`);
               continue;

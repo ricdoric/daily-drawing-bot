@@ -1,6 +1,6 @@
 {
   "name": "daily-drawing-bot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Discord bot to manage daily drawing challenges",
   "homepage": "https://github.com/ricdoric/daily-drawing-bot#readme",
   "bugs": {
