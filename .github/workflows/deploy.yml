@@ -38,6 +38,7 @@ jobs:
         --exclude='.git' \
         --exclude='node_modules' \
         --exclude='.env' \
+        --exclude='data' \
         ./ \
         ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.SERVER_PATH }}
 

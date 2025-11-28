@@ -29,13 +29,13 @@ import { isMarkedOvertime, countFireReactors, userHasModPermission } from "./rea
 
 const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.GUILD_ID;
-const clientId = process.env.CLIENT_ID;
+const applicationId = process.env.APPLICATION_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME;
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 const pingUsersFlag = process.env.PING_USERS === "true";
 // const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
-if (!token || !guildId || !clientId) {
+if (!token || !guildId || !applicationId) {
   throw new Error("Missing required environment variables.");
 }
 
@@ -77,7 +77,7 @@ async function registerCommands() {
     },
   ];
   const rest = new REST({ version: "10" }).setToken(token!);
-  await rest.put(Routes.applicationGuildCommands(clientId!, guildId!), { body: commands });
+  await rest.put(Routes.applicationGuildCommands(applicationId!, guildId!), { body: commands });
   console.log("Slash commands registered: /daily-deadline, /daily-bot-status.");
 }
 
