@@ -16,8 +16,12 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   Interaction,
   ButtonInteraction,
+  ModalSubmitInteraction,
   MessageFlags,
 } from "discord.js";
 import cron from "node-cron";
@@ -26,16 +30,25 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 import { isMarkedOvertime, countFireReactors, userHasModPermission } from "./reactionCheck";
+import {
+  initializeDatabase,
+  getOrCreateGuild,
+  getGuild,
+  updateGuild,
+  getOrCreateUser,
+  getUser,
+  updateUser,
+} from "./database";
 
 const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.GUILD_ID;
-const clientId = process.env.CLIENT_ID;
+const applicationId = process.env.APPLICATION_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME;
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 const pingUsersFlag = process.env.PING_USERS === "true";
 // const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
-if (!token || !guildId || !clientId) {
+if (!token || !guildId || !applicationId) {
   throw new Error("Missing required environment variables.");
 }
 
@@ -75,14 +88,26 @@ async function registerCommands() {
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
       dm_permission: false,
     },
+      {
+        name: "daily-theme",
+        description: "Submit today's theme (title + optional description).",
+        dm_permission: false,
+      },
   ];
   const rest = new REST({ version: "10" }).setToken(token!);
-  await rest.put(Routes.applicationGuildCommands(clientId!, guildId!), { body: commands });
+  await rest.put(Routes.applicationGuildCommands(applicationId!, guildId!), { body: commands });
   console.log("Slash commands registered: /daily-deadline, /daily-bot-status.");
 }
 
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user?.tag}`);
+  initializeDatabase();
+  
+  // Initialize all guilds in the database
+  for (const [guildId, guild] of client.guilds.cache) {
+    getOrCreateGuild(guildId, guild.name);
+  }
+  
   await registerCommands();
 });
 
@@ -98,10 +123,37 @@ client.on("interactionCreate", async (interaction) => {
         await handleDailyBotStatusCommand(interaction);
         return;
       }
+      if (interaction.commandName === "daily-theme") {
+        await handleDailyThemeCommand(interaction);
+        return;
+      }
     } else if (interaction.isButton()) {
       // handle toggle button
+      // daily-theme buttons
+      if ((interaction as ButtonInteraction).customId === "daily-theme-update") {
+        await handleLaunchDailyThemeModal(interaction as ButtonInteraction);
+        return;
+      }
+      if ((interaction as ButtonInteraction).customId === "daily-theme-clear") {
+        await handleClearDailyThemeButton(interaction as ButtonInteraction);
+        return;
+      }
       if ((interaction as ButtonInteraction).customId === "daily-bot-toggle") {
         await handleDailyBotToggleButton(interaction as ButtonInteraction);
+        return;
+      }
+      if ((interaction as ButtonInteraction).customId === "toggle-ping-users") {
+        await handleTogglePingUsersButton(interaction as ButtonInteraction);
+        return;
+      }
+      if ((interaction as ButtonInteraction).customId === "toggle-theme-saving") {
+        await handleToggleThemeSavingButton(interaction as ButtonInteraction);
+        return;
+      }
+    } else if (interaction.isModalSubmit && interaction.isModalSubmit()) {
+      // handle modal submits
+      if ((interaction as ModalSubmitInteraction).customId === "daily-theme-modal") {
+        await handleDailyThemeModalSubmit(interaction as ModalSubmitInteraction);
         return;
       }
     }
@@ -121,6 +173,11 @@ client.on("threadCreate", async (thread) => {
   try {
     const parentName = (thread.parent as any)?.name;
     if (parentName !== forumChannelName) return;
+
+    // Ensure guild record exists
+    if (thread.guild) {
+      getOrCreateGuild(thread.guild.id, thread.guild.name);
+    }
 
     const now = new Date();
     const utcTomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -150,7 +207,7 @@ client.on("threadCreate", async (thread) => {
 });
 
 // Tally the votes and build the daily drawing results message embed
-async function buildDailyResultsMessage(guild: Guild): Promise<EmbedBuilder | null> {
+async function buildDailyResultsMessage(guild: Guild): Promise<{ embed: EmbedBuilder; winnerId: string | null } | null> {
   try {
     const forum = guild.channels.cache.find((ch) => ch.type === 15 && ch.name === forumChannelName) as ForumChannel | undefined;
     if (!forum) return null;
@@ -227,24 +284,38 @@ async function buildDailyResultsMessage(guild: Guild): Promise<EmbedBuilder | nu
     const fields: { name: string; value: string; inline?: boolean }[] = [];
     const winnerMention = winnerObj.id !== "none" ? `<@${winnerObj.id}>` : "none";
 
-    // Check env var for ping users flag
+    // Check if winner has a saved theme
+    let winnerHasTheme = false;
     let winnerPingOrNot = winnerName;
-    if (pingUsersFlag) winnerPingOrNot = winnerMention;
+    let footer = "";
+    if (winnerObj.id !== "none") {
+      const saved = getUser(winnerObj.id, guild.id);
+      if (saved && saved.themeTitle) {
+        winnerHasTheme = true;
+      }
+    }
+    // If winner has a saved theme, do not ping them in the embed
+    if (winnerHasTheme) {
+      winnerPingOrNot = winnerName;
+      footer = `The bot is creating a new post with your saved theme.`;
+    } else if (winnerObj.id !== "none") {
+      winnerPingOrNot = pingUsersFlag ? winnerMention : winnerName;
+      footer = `Congratulations ${winnerName}! Please create a forum post with a new theme!`;
+    } else {
+      footer = "No winner this round!";
+    }
     const fieldValue = `${winnerPingOrNot}\n\n:fire: ` +
       `${secondObj.count}\n${secondName}\n\n:fire: ` +
       `${thirdObj.count}\n${thirdName}`;
     fields.push({ name: `:fire: ${winnerObj.count}`, value: fieldValue });
 
-    const footer = winnerObj.id !== "none" 
-      ? `Congratulations ${winnerName}! Please create a forum post with a new theme!` 
-      : "No winner this round!";
-    
     const embed = new EmbedBuilder()
       .setTitle("15 Minute Daily Drawing Results")
       .addFields(fields as any)
       .setColor(0xffa500)
       .setFooter({ text: footer });
-    return embed;
+    const winnerId = winnerObj.id !== "none" ? winnerObj.id : null;
+    return { embed, winnerId };
   } catch (err) {
     console.error("Error computing deadline for guild:", guild.id, err);
     return null;
@@ -303,6 +374,10 @@ async function handleDailyDeadlineCommand(interaction: ChatInputCommandInteracti
   try {
     const guild = interaction.guild;
     if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
+    
+    // Ensure guild record exists
+    getOrCreateGuild(guild.id, guild.name);
+    
     const invoker = await guild.members.fetch(interaction.user.id).catch(() => null);
     if (!invoker) return interaction.reply({ content: "Unable to verify your permissions.", flags: MessageFlags.Ephemeral });
     if (!userHasModPermission(invoker)) {
@@ -312,9 +387,9 @@ async function handleDailyDeadlineCommand(interaction: ChatInputCommandInteracti
       (ch) => ch.type === 15 && ch.name === forumChannelName // 15 = GuildForum
     ) as ForumChannel | undefined;
     if (!forum) return interaction.reply({ content: `Forum channel '${forumChannelName}' not found.`, flags: MessageFlags.Ephemeral });
-    const embed = await buildDailyResultsMessage(guild);
-    if (!embed) return interaction.reply({ content: "No results to report for the most recent post.", flags: MessageFlags.Ephemeral });
-    await interaction.reply({ embeds: [embed] });
+    const result = await buildDailyResultsMessage(guild);
+    if (!result) return interaction.reply({ content: "No results to report for the most recent post.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({ embeds: [result.embed] });
   } catch (err) {
     console.error(err);
     await interaction.reply({ content: "An error occurred while computing the deadline results.", flags: MessageFlags.Ephemeral });
@@ -323,79 +398,270 @@ async function handleDailyDeadlineCommand(interaction: ChatInputCommandInteracti
 
 client.login(token);
 
+// Helper to build the status message embed and buttons
+function buildStatusMessage(guildData: any) {
+  const statusLabel = botStatus === BotStatus.ON ? "ON" : "OFF";
+  const pingUsersLabel = guildData?.pingUsers ? "ON" : "OFF";
+  const themeSavingLabel = guildData?.themeSavingEnabled ? "ON" : "OFF";
+
+  const embed = new EmbedBuilder()
+    .setTitle("Daily Bot Status")
+    .setDescription(`The daily drawing bot is currently **${statusLabel}**.`)
+    .setColor(botStatus === BotStatus.ON ? 0x00ff00 : 0xff0000)
+    .addFields(
+      { name: "Ping Users", value: pingUsersLabel },
+      { name: "Theme Saving", value: themeSavingLabel }
+    );
+
+  const schedule = buildStatusSchedule();
+  if ("error" in schedule) {
+    embed.addFields({ name: "Schedule", value: schedule.error });
+  } else {
+    const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
+    const scheduleLine = `Cron: ${cronSchedule}\nNext run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
+    embed.addFields({ name: "Schedule", value: scheduleLine });
+  }
+
+  const toggleBotButton = new ButtonBuilder()
+    .setCustomId("daily-bot-toggle")
+    .setLabel(botStatus === BotStatus.ON ? "Turn Bot OFF" : "Turn Bot ON")
+    .setStyle(ButtonStyle.Primary);
+  
+  const togglePingButton = new ButtonBuilder()
+    .setCustomId("toggle-ping-users")
+    .setLabel(guildData?.pingUsers ? "Disable Ping Users" : "Enable Ping Users")
+    .setStyle(ButtonStyle.Secondary);
+  
+  const toggleThemeButton = new ButtonBuilder()
+    .setCustomId("toggle-theme-saving")
+    .setLabel(guildData?.themeSavingEnabled ? "Disable Theme Saving" : "Enable Theme Saving")
+    .setStyle(ButtonStyle.Secondary);
+  
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(toggleBotButton, togglePingButton, toggleThemeButton);
+
+  return { embeds: [embed], components: [row] };
+}
+
 // Handle the /daily-bot-status command: show current status and a toggle button
 async function handleDailyBotStatusCommand(interaction: ChatInputCommandInteraction) {
   try {
     const auth = await getGuildAndInvoker(interaction);
     if (!auth) return;
     const { guild, invoker } = auth;
+    
+    // Ensure guild record exists
+    getOrCreateGuild(guild.id, guild.name);
+    
     if (!userHasModPermission(invoker)) return interaction.reply({ content: "You must be admin or mod.", flags: MessageFlags.Ephemeral });
-    const statusLabel = botStatus === BotStatus.ON ? "ON" : "OFF";
-
-    const embed = new EmbedBuilder()
-      .setTitle("Daily Bot Status")
-      .setDescription(`The daily drawing bot is currently **${statusLabel}**.`)
-      .setColor(botStatus === BotStatus.ON ? 0x00ff00 : 0xff0000);
-
-    const schedule = buildStatusSchedule();
-    if ("error" in schedule) {
-      embed.addFields({ name: "Schedule", value: schedule.error });
-    } else {
-      const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
-      const scheduleLine = `Deadline (UTC): ${utcStr}\nDeadline (local time): ${discordLocal}\nTime until deadline: ${hours}h ${minutes}m`;
-      embed.addFields({ name: "Schedule", value: scheduleLine });
-    }
-
-    const toggleLabel = botStatus === BotStatus.ON ? "Turn OFF" : "Turn ON";
-    const button = new ButtonBuilder().setCustomId("daily-bot-toggle").setLabel(toggleLabel).setStyle(ButtonStyle.Primary);
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button as any);
-
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    
+    const guildData = getGuild(guild.id);
+    await interaction.reply({ ...buildStatusMessage(guildData), ephemeral: true });
   } catch (e) {
     console.error("Error showing bot status:", e);
     await interaction.reply({ content: "Failed to show bot status.", flags: MessageFlags.Ephemeral });
   }
 }
 
+// Show modal for /daily-theme command
+async function handleDailyThemeCommand(interaction: ChatInputCommandInteraction) {
+  try {
+    const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Guild not found.", flags: MessageFlags.Ephemeral });
+
+    const userId = interaction.user.id;
+    const guildId = guild.id;
+    const user = getOrCreateUser(userId, guildId);
+
+    const title = user?.themeTitle || "(no saved theme)";
+    const desc = user?.themeDescription || "";
+
+    const embed = new EmbedBuilder()
+      .setTitle("Saved daily theme")
+      .setDescription("You can save a daily theme that will automatically post if your drawing wins! Click the update button to change your saved theme, or click the clear button to remove it.")
+      .setColor(0x0099ff)
+      .addFields(
+        { name: "Title", value: title },
+        { name: "Description", value: desc || "(none)" }
+      );
+
+    const updateButton = new ButtonBuilder().setCustomId("daily-theme-update").setLabel("Update Theme").setStyle(ButtonStyle.Primary);
+    const clearButton = new ButtonBuilder().setCustomId("daily-theme-clear").setLabel("Clear Theme").setStyle(ButtonStyle.Danger);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(updateButton, clearButton);
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  } catch (e) {
+    console.error("Error showing daily theme status:", e);
+    try { await interaction.reply({ content: "Failed to show theme status.", flags: MessageFlags.Ephemeral }); } catch {}
+  }
+}
+
+// Launch modal to create/update daily theme (used by button)
+async function handleLaunchDailyThemeModal(interaction: ButtonInteraction) {
+  try {
+    const modal = new ModalBuilder().setCustomId("daily-theme-modal").setTitle("Submit Daily Theme");
+
+    const titleInput = new TextInputBuilder()
+      .setCustomId("themeTitle")
+      .setLabel("Daily theme title")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(100);
+
+    const descInput = new TextInputBuilder()
+      .setCustomId("themeDescription")
+      .setLabel("Theme description (optional)")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(false)
+      .setMaxLength(400);
+
+    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
+    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(descInput);
+    modal.addComponents(row1, row2);
+
+    await interaction.showModal(modal);
+  } catch (e) {
+    console.error("Error launching daily theme modal:", e);
+    try { await interaction.reply({ content: "Failed to open theme form.", ephemeral: true }); } catch {}
+  }
+}
+
+// Clear a user's saved theme (used by button)
+async function handleClearDailyThemeButton(interaction: ButtonInteraction) {
+  try {
+    const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Guild not found.", ephemeral: true });
+
+    const userId = interaction.user.id;
+    const guildId = guild.id;
+
+    // Ensure user exists
+    getOrCreateUser(userId, guildId);
+    updateUser(userId, guildId, { themeTitle: null, themeDescription: null, themeTimestampUTC: null });
+
+    const user = getUser(userId, guildId);
+    const title = user?.themeTitle || "(no saved theme)";
+    const desc = user?.themeDescription || "";
+
+    const embed = new EmbedBuilder()
+      .setTitle("Saved daily theme")
+      .setDescription("You can save a daily theme that will automatically post if your drawing wins! Click the update button to change your saved theme, or click the clear button to clear it.")
+      .setColor(0x0099ff)
+      .addFields(
+        { name: "Title", value: title },
+        { name: "Description", value: desc || "(none)" }
+      );
+
+    const updateButton = new ButtonBuilder().setCustomId("daily-theme-update").setLabel("Update Theme").setStyle(ButtonStyle.Primary);
+    const clearButton = new ButtonBuilder().setCustomId("daily-theme-clear").setLabel("Clear Theme").setStyle(ButtonStyle.Danger);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(updateButton, clearButton);
+
+    await interaction.update({ embeds: [embed], components: [row] });
+  } catch (e) {
+    console.error("Error clearing daily theme:", e);
+    try { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: "Failed to clear theme.", ephemeral: true }); } catch {}
+  }
+}
+
+// Handle modal submit for daily-theme
+async function handleDailyThemeModalSubmit(interaction: ModalSubmitInteraction) {
+  try {
+    const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Guild not found.", ephemeral: true });
+
+    const userId = interaction.user.id;
+    const guildId = guild.id;
+    const title = interaction.fields.getTextInputValue("themeTitle") || "";
+    const description = interaction.fields.getTextInputValue("themeDescription") || "";
+    const timestampUTC = new Date().toISOString();
+
+    // Ensure user record exists then update
+    getOrCreateUser(userId, guildId);
+    updateUser(userId, guildId, {
+      themeTitle: title,
+      themeDescription: description,
+      themeTimestampUTC: timestampUTC,
+    });
+
+    await interaction.reply({ content: `Saved daily theme: **${title}**`, ephemeral: true });
+  } catch (e) {
+    console.error("Error handling daily theme submit:", e);
+    try { await interaction.reply({ content: "Failed to save theme.", ephemeral: true }); } catch {}
+  }
+}
+
 // Handle button interaction to toggle bot status
 async function handleDailyBotToggleButton(interaction: ButtonInteraction) {
   try {
-    // require admin/mod for button toggle
     const auth = await requireAdminOrModForInteraction(interaction);
-    if (!auth) return; // requireAdmin... will reply ephemerally on failure
+    if (!auth) return;
+    const { guild } = auth;
 
-    // toggle
     botStatus = botStatus === BotStatus.ON ? BotStatus.OFF : BotStatus.ON;
     console.log(`Bot status toggled to ${BotStatus[botStatus]} by ${(interaction.user as any)?.tag || interaction.user.id}`);
 
-    // update the message embed and button label
-    const statusLabel = botStatus === BotStatus.ON ? "ON" : "OFF";
-    const embed = new EmbedBuilder()
-      .setTitle("Daily Bot Status")
-      .setDescription(`The daily drawing bot is currently **${statusLabel}**.`)
-      .setColor(botStatus === BotStatus.ON ? 0x00ff00 : 0xff0000);
-
-
-    const schedule = buildStatusSchedule();
-    if ("error" in schedule) {
-      embed.addFields({ name: "Schedule", value: schedule.error });
-    } else {
-      const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
-      const scheduleLine = `Cron: ${cronSchedule}\nNext run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
-      embed.addFields({ name: "Schedule", value: scheduleLine });
-    }
-
-    const toggleLabel = botStatus === BotStatus.ON ? "Turn OFF" : "Turn ON";
-    const button = new ButtonBuilder().setCustomId("daily-bot-toggle").setLabel(toggleLabel).setStyle(ButtonStyle.Primary);
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button as any);
-
-    // Update the original message where the button was pressed
-    await interaction.update({ embeds: [embed], components: [row] });
+    const guildData = getGuild(guild.id);
+    await interaction.update(buildStatusMessage(guildData));
   } catch (e) {
     console.error("Error handling toggle button:", e);
     try {
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ content: "Failed to toggle bot status.", ephemeral: true });
+      }
+    } catch { }
+  }
+}
+
+// Handle button interaction to toggle pingUsers setting for a guild
+async function handleTogglePingUsersButton(interaction: ButtonInteraction) {
+  try {
+    const auth = await requireAdminOrModForInteraction(interaction);
+    if (!auth) return;
+    const { guild } = auth;
+
+    const guildData = getGuild(guild.id);
+    if (!guildData) {
+      await interaction.reply({ content: "Guild data not found.", ephemeral: true });
+      return;
+    }
+
+    const newPingValue = guildData.pingUsers ? 0 : 1;
+    updateGuild(guild.id, { pingUsers: newPingValue });
+    console.log(`Ping users toggled to ${newPingValue} for guild ${guild.id} by ${(interaction.user as any)?.tag || interaction.user.id}`);
+
+    await interaction.update(buildStatusMessage({ ...guildData, pingUsers: newPingValue }));
+  } catch (e) {
+    console.error("Error handling ping users toggle:", e);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Failed to toggle ping users setting.", ephemeral: true });
+      }
+    } catch { }
+  }
+}
+
+// Handle button interaction to toggle theme saving for a guild
+async function handleToggleThemeSavingButton(interaction: ButtonInteraction) {
+  try {
+    const auth = await requireAdminOrModForInteraction(interaction);
+    if (!auth) return;
+    const { guild } = auth;
+
+    const guildData = getGuild(guild.id);
+    if (!guildData) {
+      await interaction.reply({ content: "Guild data not found.", ephemeral: true });
+      return;
+    }
+
+    const newThemeValue = guildData.themeSavingEnabled ? 0 : 1;
+    updateGuild(guild.id, { themeSavingEnabled: newThemeValue });
+    console.log(`Theme saving toggled to ${newThemeValue} for guild ${guild.id} by ${(interaction.user as any)?.tag || interaction.user.id}`);
+
+    await interaction.update(buildStatusMessage({ ...guildData, themeSavingEnabled: newThemeValue }));
+  } catch (e) {
+    console.error("Error handling theme saving toggle:", e);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Failed to toggle theme saving setting.", ephemeral: true });
       }
     } catch { }
   }
@@ -494,11 +760,12 @@ try {
               console.log(`Skipping guild ${guild.id} because botStatus is OFF`);
               continue;
             }
-            const embed = await buildDailyResultsMessage(guild);
-            if (!embed) {
+            const result = await buildDailyResultsMessage(guild);
+            if (!result) {
               console.log(`No results to announce for guild ${guild.id}`);
               continue;
             }
+            const embed = result.embed;
             const chat = guild.channels.cache.find(
               (ch) => ch.type === ChannelType.GuildText && ch.name === chatChannelName
             ) as TextChannel | undefined;
@@ -511,6 +778,42 @@ try {
               console.log(`Posted daily results in guild ${guild.id} to text channel '${chatChannelName}'`);
             } catch (e) {
               console.error(`Failed to post daily results in guild ${guild.id}:`, e);
+            }
+
+            // If the winner has a saved theme, create a forum post and announce it, then clear the saved theme
+            try {
+              const winnerId = result.winnerId;
+              if (winnerId) {
+                const saved = getUser(winnerId, guild.id);
+                if (saved && saved.themeTitle) {
+                  // Create forum post
+                  const forum = guild.channels.cache.find(
+                    (ch) => ch.type === 15 && ch.name === forumChannelName
+                  ) as ForumChannel | undefined;
+                  const body = `${saved.themeDescription || ""}\n\nTheme by: <@${winnerId}>`;
+                  if (forum) {
+                    try {
+                      // create a new forum post (thread) with the theme
+                      await (forum as any).threads.create({ name: saved.themeTitle, message: { content: body } });
+                      console.log(`Created forum post for saved theme '${saved.themeTitle}' in guild ${guild.id}`);
+                    } catch (e) {
+                      console.error("Failed to create forum post for theme:", e);
+                    }
+                  } else {
+                    console.log(`Forum channel '${forumChannelName}' not found in guild ${guild.id} while creating theme post.`);
+                  }
+
+                  // Clear the user's saved theme
+                  try {
+                    updateUser(winnerId, guild.id, { themeTitle: null, themeDescription: null, themeTimestampUTC: null });
+                    console.log(`Cleared saved theme for user ${winnerId} in guild ${guild.id}`);
+                  } catch (e) {
+                    console.error("Failed to clear saved theme for user:", e);
+                  }
+                }
+              }
+            } catch (e) {
+              console.error("Error handling saved theme after posting results:", e);
             }
           } catch (e) {
             console.error("Error running scheduled job for guild:", id, e);
