@@ -44,7 +44,7 @@ const applicationId = process.env.APPLICATION_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME;
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 const pingUsersFlag = process.env.PING_USERS === "true";
-// const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
+const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
 if (!token || !applicationId) {
   throw new Error("Missing required environment variables.");
@@ -76,19 +76,19 @@ async function registerCommands() {
   const commands = [
     {
       name: "daily-deadline",
-      description: "Announce voting deadline and post winner, 2nd and 3rd place (by fire reactions).",
+      description: "DEBUG COMMAND - test the deadline vote counting.",
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
       dm_permission: false,
     },
     {
       name: "daily-bot-status",
-      description: "Show the current daily-bot status and toggle it (interactive).",
+      description: "Status screen with togglable options.",
       default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
       dm_permission: false,
     },
     {
       name: "daily-theme",
-      description: "Submit today's theme (title + optional description).",
+      description: "Submit a new daily theme that will automatically post if you win.",
       dm_permission: false,
     },
   ];
@@ -134,7 +134,6 @@ client.on("interactionCreate", async (interaction) => {
         await handleDailyDeadlineCommand(interaction);
         return;
       }
-      // /daily-bot-on and /daily-bot-off removed; use /daily-bot-status instead
       if (interaction.commandName === "daily-bot-status") {
         await handleDailyBotStatusCommand(interaction);
         return;
@@ -144,7 +143,6 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
     } else if (interaction.isButton()) {
-      // handle toggle button
       // daily-theme buttons
       if ((interaction as ButtonInteraction).customId === "daily-theme-update") {
         await handleLaunchDailyThemeModal(interaction as ButtonInteraction);
