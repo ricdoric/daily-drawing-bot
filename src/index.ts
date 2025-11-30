@@ -39,14 +39,14 @@ import {
 import { handleDailyThemeCommand, handleClearDailyThemeButton, handleDailyThemeModalSubmit, handleLaunchDailyThemeModal } from "./themeSaving";
 
 const token = process.env.DISCORD_TOKEN;
-const testingGuildId = process.env.TESTING_GUILD_ID;
+// const testingGuildId = process.env.TESTING_GUILD_ID;
 const applicationId = process.env.APPLICATION_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME;
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 const pingUsersFlag = process.env.PING_USERS === "true";
 // const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
-if (!token || !testingGuildId || !applicationId) {
+if (!token || !applicationId) {
   throw new Error("Missing required environment variables.");
 }
 
@@ -658,7 +658,7 @@ try {
 
 async function deadlineResults() {
   console.log(`Posting results to chat channel`);
-  for (const [id, g] of client.guilds.cache) {
+  for (const [id] of client.guilds.cache) {
     try {
       const guild = await client.guilds.fetch(id).catch(() => null);
       if (!guild) continue;
@@ -700,7 +700,7 @@ async function deadlineResults() {
             if (forum) {
               try {
                 // create a new forum post (thread) with the theme
-                await(forum as any).threads.create({ name: saved.themeTitle, message: { content: body } });
+                await (forum as any).threads.create({ name: saved.themeTitle, message: { content: body } });
                 console.log(`Created forum post for saved theme '${saved.themeTitle}' in guild ${guild.id}`);
               } catch (e) {
                 console.error("Failed to create forum post for theme:", e);
