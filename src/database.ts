@@ -43,6 +43,7 @@ function initializeDatabase(): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT NOT NULL,
         guildId TEXT NOT NULL,
+        username TEXT,
         themeTitle TEXT,
         themeDescription TEXT,
         themeTimestampUTC TEXT,
@@ -147,16 +148,16 @@ function getAllGuilds(): any[] {
 /**
  * Get or create a user record.
  */
-function getOrCreateUser(userId: string, guildId: string): any {
+function getOrCreateUser(userId: string, guildId: string, username: string): any {
   try {
     const existing = db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId);
     if (existing) return existing;
 
     const stmt = db.prepare(`
-      INSERT INTO users (userId, guildId)
-      VALUES (?, ?)
+      INSERT INTO users (userId, guildId, username)
+      VALUES (?, ?, ?)
     `);
-    stmt.run(userId, guildId);
+    stmt.run(userId, guildId, username);
 
     return db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId);
   } catch (err) {
