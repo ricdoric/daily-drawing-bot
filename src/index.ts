@@ -346,23 +346,6 @@ async function buildDailyResultsMessage(guild: Guild): Promise<{ embed: EmbedBui
   }
 }
 
-// function createDailyResultsEmbed(first, second, third, ping: boolean = true): EmbedBuilder {
-//   const fields: { name: string; value: string; inline?: boolean }[] = [];
-//   fields.push({ name: `Rank`, value: `1st\n2nd\n3rd`, inline: true });
-//   const firstMention = first.id !== "none" ? `<@${first.id}>` : "none";
-
-//   // Check env var for ping users flag
-//   if (ping === true) {
-//     fields.push({ name: `Name`, value: `${firstMention}\n${second.username}\n${third.username}`, inline: true });
-//   } else {
-//     fields.push({ name: `Name`, value: `${first.username}\n${second.username}\n${third.username}`, inline: true });
-//   }
-//   fields.push({ name: `:fire:`, value: `${first.count}\n${second.count}\n${third.count}`, inline: true });
-
-//   const embed = new EmbedBuilder().setTitle("15 Minute Daily Results").addFields(fields as any).setColor(0xffa500);
-//   return embed;
-// }
-
 // Return true if the message appears to be an image reply (attachment, embed image, or image URL)
 function isImageMessage(msg: any): boolean {
   try {
