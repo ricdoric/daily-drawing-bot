@@ -700,7 +700,7 @@ async function deadlineResults() {
             if (forum) {
               try {
                 // create a new forum post (thread) with the theme
-                await (forum as any).threads.create({ name: saved.themeTitle, message: { content: body } });
+                await(forum as any).threads.create({ name: saved.themeTitle, message: { content: body } });
                 console.log(`Created forum post for saved theme '${saved.themeTitle}' in guild ${guild.id}`);
               } catch (e) {
                 console.error("Failed to create forum post for theme:", e);
