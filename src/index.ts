@@ -227,6 +227,39 @@ client.on("threadCreate", async (thread) => {
   }
 });
 
+// Auto-react with :fire: on image posts in the forum channel
+client.on("messageCreate", async (message) => {
+  try {
+    if (!message || !message.guild) return;
+    // Ignore bot messages
+    if (message.author?.bot) return;
+
+    // Fetch partial message if needed
+    if (message.partial) {
+      try { await message.fetch(); } catch { /* ignore fetch errors */ }
+    }
+
+    const chAny: any = message.channel;
+    const parentName = chAny?.parent?.name;
+    if (parentName !== forumChannelName) return;
+
+    // Only react to messages that appear to be images
+    if (!isImageMessage(message)) return;
+
+    // Add fire reaction
+    try {
+      await message.react("🔥");
+      console.log(`Added fire react to message ${message.id} in guild ${message.guild.id}`);
+    } catch (e) {
+      // permission or unknown message errors are possible
+      // log and continue
+      console.error("Failed to add fire reaction:", e);
+    }
+  } catch (e) {
+    console.error("Error in messageCreate handler:", e);
+  }
+});
+
 // Tally the votes and build the daily drawing results message embed
 async function buildDailyResultsMessage(guild: Guild): Promise<{ embed: EmbedBuilder; winnerId: string | null } | null> {
   try {
