@@ -385,7 +385,7 @@ function isImageMessage(msg: any): boolean {
         const ct = (att.contentType as string) || "";
         if (ct.startsWith("image/")) return true;
         const name = att.name || att.url || "";
-        if (/(\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.tiff|\.svg)$/i.test(name)) return true;
+        if (/(\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.tiff|\.svg|\.webp)$/i.test(name)) return true;
       }
     }
     if (msg.embeds && msg.embeds.length > 0) {
@@ -395,7 +395,7 @@ function isImageMessage(msg: any): boolean {
       }
     }
     if (typeof msg.content === "string" && msg.content) {
-      const urlRegex = /(https?:\/\/\S+\.(png|jpe?g|gif|webp|bmp|tiff|svg))(?:\?\S*)?/i;
+      const urlRegex = /(https?:\/\/\S+\.(png|jpe?g|gif|webp|bmp|tiff|svg|webp))(?:\?\S*)?/i;
       if (urlRegex.test(msg.content)) return true;
     }
   } catch (e) {
