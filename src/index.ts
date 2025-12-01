@@ -423,7 +423,7 @@ function buildStatusMessage(guildData: any) {
     embed.addFields({ name: "Schedule", value: schedule.error });
   } else {
     const { cronSchedule, utcStr, discordLocal, hours, minutes } = schedule;
-    const scheduleLine = `Cron: ${cronSchedule}\nNext run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
+    const scheduleLine = `Next run (UTC): ${utcStr}\nNext run (local time): ${discordLocal}\nTime until next run: ${hours}h ${minutes}m`;
     embed.addFields({ name: "Schedule", value: scheduleLine });
   }
 
