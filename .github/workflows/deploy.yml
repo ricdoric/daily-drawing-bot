@@ -1,8 +1,12 @@
 name: Deploy to DigitalOcean
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment (optional)'
+        required: false
+        default: 'production'
 
 jobs:
   deploy:
