@@ -12,7 +12,7 @@ export async function calculateTopThreeDrawings(guild: Guild, forumChannelName: 
   try {
     const forum = guild.channels.cache.find((ch) => ch.type === ChannelType.GuildForum && ch.name === forumChannelName) as ForumChannel | undefined;
     if (!forum) return topThree;
-    
+
     // Fetch the most recent thread (post) in the forum
     const threads = await forum.threads.fetchActive();
     const threadArr = Array.from(threads.threads.values());
@@ -97,7 +97,7 @@ export async function createForumPost(guild: Guild, forumChannelName: string, wi
         const body = `${saved.themeDescription || ""}\n\nTheme by: <@${winnerId}>\n\n${buildRulesMessage()}`;
         if (forum) {
           try {
-            const thread = await (forum as any).threads.create({ name: saved.themeTitle, message: { content: body } });
+            const thread = await (forum as any).threads.create({ name: saved.themeTitle, message: { content: body, allowedMentions: { users: [] } } });
             newPostId = thread.id;
             console.log(`Created forum post for saved theme '${saved.themeTitle}' in guild ${guild.id}`);
           } catch (e) {
