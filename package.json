@@ -16,7 +16,8 @@
   "scripts": {
     "build": "tsc",
     "start": "npm run build && node dist/index.js",
-    "dev": "ts-node-dev src/index.ts"
+    "dev": "ts-node-dev src/index.ts",
+    "clear": "node src/clearGuildCommands.js"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

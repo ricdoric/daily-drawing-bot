@@ -26,6 +26,8 @@ function initializeDatabase(): void {
         guildId TEXT NOT NULL UNIQUE,
         name TEXT,
         deadlineUTC TEXT,
+        contestEntriesChannelName TEXT,
+        contestForumChannelName TEXT,
         reminderTiming INTEGER DEFAULT 0,
         reminderMsg TEXT,
         rulesEnabled INTEGER DEFAULT 0,
