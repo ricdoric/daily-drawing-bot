@@ -11,36 +11,41 @@ export function isImageMessage(msg: any): boolean {
     }
     if (msg.embeds && msg.embeds.length > 0) {
       for (const e of msg.embeds) {
-        if (e.image?.url || e.thumbnail?.url) return true;
-        if (e.type === "image" && e.url) return true;
+      if (e.image?.url || e.thumbnail?.url) return true;
+      if (e.type === "image" && e.url) return true;
       }
     }
     if (typeof msg.content === "string" && msg.content) {
       const urlRegex = /(https?:\/\/\S+\.(png|jpe?g|gif|webp|bmp|tiff|svg|webp))(?:\?\S*)?/i;
       if (urlRegex.test(msg.content)) return true;
     }
-  } catch (e) {
+    } catch (e) {
     // If anything goes wrong, be conservative and treat as non-image
+    }
+    return false;
   }
-  return false;
-}
 
 
-export function buildRulesMessage(): string {
-  const now = new Date();
-  const utcTomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const dateStr = utcTomorrow.toLocaleDateString("en-US", {
+  export function buildRulesMessage(): string {
+    const now = new Date();
+    const utcTomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dateStr = utcTomorrow.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
     timeZone: "UTC",
-  });
-  return (
+    });
+    
+    // Discord timestamp for 4am UTC tomorrow
+    const tomorrow4amUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 4, 0, 0));
+    const timestamp = Math.floor(tomorrow4amUTC.getTime() / 1000);
+    
+    return (
     `Welcome to the daily drawing thread for ${dateStr}!\n` +
     "- Please only post images in this thread\n" +
     "- React an image with \\:fire\\: :fire: to vote for it to win, you may vote as much as you'd like\n" +
     "- If your drawing went over time, react on it with \\:timer\\: :timer: and it won't be counted\n" +
     "- You can post multiple drawings, just keep them as separate replies in the thread\n" +
-    "- The votes will be counted and the winner announced at 04:00 UTC\n"
-  );
-}
+    `- The deadline is: 04:00 UTC / <t:${timestamp}:t> your local time\n`
+    );
+  }

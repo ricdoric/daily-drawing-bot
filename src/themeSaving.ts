@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ButtonInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction } from "discord.js";
+import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ButtonInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction, LabelBuilder } from "discord.js";
 import { getOrCreateUser, updateUser, getUser } from "./database";
 
 // Show modal for /daily-theme command
@@ -28,23 +28,29 @@ async function handleLaunchDailyThemeModal(interaction: ButtonInteraction) {
   try {
     const modal = new ModalBuilder().setCustomId("daily-theme-modal").setTitle("Submit Daily Theme");
 
+    // Title
     const titleInput = new TextInputBuilder()
       .setCustomId("themeTitle")
-      .setLabel("Daily theme title")
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMaxLength(100);
 
+    const titleLabel = new LabelBuilder()
+      .setLabel("Daily theme title")
+      .setTextInputComponent(titleInput);
+
+    // Description
     const descInput = new TextInputBuilder()
       .setCustomId("themeDescription")
-      .setLabel("Theme description (optional)")
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
       .setMaxLength(400);
 
-    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
-    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(descInput);
-    modal.addComponents(row1, row2);
+    const descLabel = new LabelBuilder()
+      .setLabel("More details (optional)")
+      .setTextInputComponent(descInput);
+
+    modal.addLabelComponents(titleLabel, descLabel);
 
     await interaction.showModal(modal);
   } catch (e) {
@@ -109,7 +115,7 @@ async function handleDailyThemeModalSubmit(interaction: ModalSubmitInteraction) 
     try {
       await interaction.deferUpdate();
       await interaction.editReply({ embeds: [embed], components: [row] });
-    } catch (e){
+    } catch (e) {
       console.log("Failed to edit reply, sending new reply instead", e);
       await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
     }
