@@ -17,12 +17,14 @@
     "build": "tsc",
     "start": "npm run build && node dist/index.js",
     "dev": "ts-node-dev src/index.ts",
-    "clear": "node src/clearGuildCommands.js"
+    "clear": "node src/clearGuildCommands.js",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node-cron": "^3.0.11",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^1.1.4"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.6",

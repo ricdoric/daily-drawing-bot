@@ -65,8 +65,6 @@ export async function calculateTopThreeDrawings(guild: Guild, forumChannelName: 
     const secondObj = second ?? { id: "none", username: "none", count: 0 };
     const thirdObj = third ?? { id: "none", username: "none", count: 0 };
 
-    const { winnerThemeTitle, winnerThemeDescription } = getUser(winnerObj.id, guild.id);
-
     topThree = [
       { id: winnerObj.id, username: winnerObj.username, votes: winnerObj.count },
       { id: secondObj.id, username: secondObj.username, votes: secondObj.count },
@@ -94,7 +92,7 @@ export async function createForumPost(guild: Guild, forumChannelName: string, wi
         const forum = guild.channels.cache.find(
           (ch) => ch.type === 15 && ch.name === forumChannelName
         ) as ForumChannel | undefined;
-        const body = `${saved.themeDescription || ""}\n\nTheme by: <@${winnerId}>\n\n${buildRulesMessage()}`;
+        const body = `Theme by: <@${winnerId}>\n\n${saved.themeDescription || ""}\n\n${buildRulesMessage()}`;
         if (forum) {
           try {
             const thread = await (forum as any).threads.create({ name: saved.themeTitle, message: { content: body, allowedMentions: { users: [] } } });

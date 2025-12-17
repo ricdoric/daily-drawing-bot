@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { GuildConfig, UserConfig } from "./types";
 
 // Ensure data directory exists
 const dataDir = path.join(process.cwd(), "data");
@@ -67,9 +68,9 @@ function initializeDatabase(): void {
 /**
  * Get or create a guild record.
  */
-function getOrCreateGuild(guildId: string, name?: string): any {
+function getOrCreateGuild(guildId: string, name?: string): GuildConfig {
   try {
-    const existing = db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId);
+    const existing = db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId) as GuildConfig | undefined;
     if (existing) return existing;
 
     const stmt = db.prepare(`
@@ -78,12 +79,12 @@ function getOrCreateGuild(guildId: string, name?: string): any {
     `);
     stmt.run(guildId, name || "Unknown Guild", 0);
 
-    return db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId);
+    return db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId) as GuildConfig;
   } catch (err) {
     console.error("Error getting or creating guild:", err);
     throw err;
   }
-}
+} 
 
 /**
  * Update a guild's settings.
@@ -112,14 +113,14 @@ function updateGuild(guildId: string, updates: Record<string, any>): boolean {
 /**
  * Get a guild by ID.
  */
-function getGuild(guildId: string): any {
+function getGuild(guildId: string): GuildConfig | undefined {
   try {
-    return db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId);
+    return db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId) as GuildConfig | undefined;
   } catch (err) {
     console.error("Error getting guild:", err);
     throw err;
   }
-}
+} 
 
 /**
  * Delete a guild record.
@@ -138,9 +139,9 @@ function deleteGuild(guildId: string): boolean {
 /**
  * Get all guilds.
  */
-function getAllGuilds(): any[] {
+function getAllGuilds(): GuildConfig[] {
   try {
-    return db.prepare("SELECT * FROM guilds").all();
+    return db.prepare("SELECT * FROM guilds").all() as GuildConfig[];
   } catch (err) {
     console.error("Error getting all guilds:", err);
     throw err;
@@ -150,9 +151,9 @@ function getAllGuilds(): any[] {
 /**
  * Get or create a user record.
  */
-function getOrCreateUser(userId: string, guildId: string, username: string): any {
+function getOrCreateUser(userId: string, guildId: string, username: string): UserConfig {
   try {
-    const existing = db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId);
+    const existing = db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId) as UserConfig | undefined;
     if (existing) return existing;
 
     const stmt = db.prepare(`
@@ -161,24 +162,24 @@ function getOrCreateUser(userId: string, guildId: string, username: string): any
     `);
     stmt.run(userId, guildId, username);
 
-    return db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId);
+    return db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId) as UserConfig;
   } catch (err) {
     console.error("Error getting or creating user:", err);
     throw err;
   }
-}
+} 
 
 /**
  * Get a user by userId and guildId.
  */
-function getUser(userId: string, guildId: string): any {
+function getUser(userId: string, guildId: string): UserConfig | undefined {
   try {
-    return db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId);
+    return db.prepare("SELECT * FROM users WHERE userId = ? AND guildId = ?").get(userId, guildId) as UserConfig | undefined;
   } catch (err) {
     console.error("Error getting user:", err);
     throw err;
   }
-}
+} 
 
 /**
  * Update a user's settings.
@@ -221,9 +222,9 @@ function deleteUser(userId: string, guildId: string): boolean {
 /**
  * Get all users in a guild.
  */
-function getUsersByGuild(guildId: string): any[] {
+function getUsersByGuild(guildId: string): UserConfig[] {
   try {
-    return db.prepare("SELECT * FROM users WHERE guildId = ?").all(guildId);
+    return db.prepare("SELECT * FROM users WHERE guildId = ?").all(guildId) as UserConfig[];
   } catch (err) {
     console.error("Error getting users by guild:", err);
     throw err;
@@ -233,9 +234,9 @@ function getUsersByGuild(guildId: string): any[] {
 /**
  * Get all users across all guilds.
  */
-function getAllUsers(): any[] {
+function getAllUsers(): UserConfig[] {
   try {
-    return db.prepare("SELECT * FROM users").all();
+    return db.prepare("SELECT * FROM users").all() as UserConfig[];
   } catch (err) {
     console.error("Error getting all users:", err);
     throw err;
