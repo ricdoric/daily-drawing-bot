@@ -1,5 +1,5 @@
 import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ButtonInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ModalSubmitInteraction, LabelBuilder } from "discord.js";
-import { getOrCreateUser, updateUser, getUser } from "./database";
+import { getOrCreateUser, updateUser, getUser } from "../../database";
 
 // Show modal for /daily-theme command
 async function handleDailyThemeCommand(interaction: ChatInputCommandInteraction) {
@@ -59,7 +59,6 @@ async function handleLaunchDailyThemeModal(interaction: ButtonInteraction) {
   }
 }
 
-// Clear a user's saved theme (used by button)
 async function handleClearDailyThemeButton(interaction: ButtonInteraction) {
   try {
     const guild = interaction.guild;

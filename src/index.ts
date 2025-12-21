@@ -8,7 +8,6 @@ import {
   ForumChannel,
   EmbedBuilder,
   PermissionsBitField,
-  AnyThreadChannel,
   Guild,
   GuildMember,
   ChannelType,
@@ -26,25 +25,23 @@ import cronParser from "cron-parser";
 import * as dotenv from "dotenv";
 dotenv.config();
 
-import { isMarkedOvertime, countFireReactors, userHasModPermission } from "./reactionCheck";
+import { userHasModPermission } from "./reactionCheck";
 import {
   initializeDatabase,
   getOrCreateGuild,
   getGuild,
   updateGuild,
-  getOrCreateUser,
-  getUser,
-  updateUser,
 } from "./database";
-import { handleDailyThemeCommand, handleClearDailyThemeButton, handleDailyThemeModalSubmit, handleLaunchDailyThemeModal } from "./themeSaving";
+import { handleDailyThemeCommand, handleClearDailyThemeButton, handleDailyThemeModalSubmit, handleLaunchDailyThemeModal } from "./bot/commands/theme";
 import { podiumArtist } from "./types";
 import { calculateTopThreeDrawings, createForumPost } from "./deadlineLogic";
 import { buildRulesMessage, isImageMessage } from "./util";
+import { handleThreadCreate } from "./bot/events/threadCreate";
 
 const token = process.env.DISCORD_TOKEN;
 // const testingGuildId = process.env.TESTING_GUILD_ID;
 const applicationId = process.env.APPLICATION_ID;
-const forumChannelName = process.env.FORUM_CHANNEL_NAME;
+const forumChannelName = process.env.FORUM_CHANNEL_NAME; // TODO: replace with per-guild config
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 const pingUsersFlag = process.env.PING_USERS === "true";
 const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
@@ -71,6 +68,8 @@ enum BotStatus {
   OFF,
   ON,
 }
+
+// TODO: simple caching for GuildConfig
 
 // let botStatus = BotStatus.OFF; // TODO: Bot defaults to OFF
 let botStatus = BotStatus.ON; // on during development
@@ -134,6 +133,7 @@ client.on("guildCreate", (guild) => {
   getOrCreateGuild(guild.id, guild.name);
 });
 
+// Event listener for slash commands and button interactions
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
@@ -150,7 +150,6 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
     } else if (interaction.isButton()) {
-      // daily-theme buttons
       if ((interaction as ButtonInteraction).customId === "daily-theme-update") {
         await handleLaunchDailyThemeModal(interaction as ButtonInteraction);
         return;
@@ -172,7 +171,6 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
     } else if (interaction.isModalSubmit && interaction.isModalSubmit()) {
-      // handle modal submits
       if ((interaction as ModalSubmitInteraction).customId === "daily-theme-modal") {
         await handleDailyThemeModalSubmit(interaction as ModalSubmitInteraction);
         return;
@@ -188,33 +186,13 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-
-
 // Watch for new threads created in the forum channel and post the rules
 client.on("threadCreate", async (thread) => {
-  if (botStatus === BotStatus.OFF) return; // Do nothing if bot is OFF
-  try {
-    // If the thread was created by the bot, do nothing
-    if (thread.ownerId && thread.client.user && thread.ownerId === thread.client.user.id) return;
+  if (botStatus === BotStatus.OFF) return;
 
-    const parentName = (thread.parent as any)?.name;
-    if (parentName !== forumChannelName) return;
+  handleThreadCreate(thread, forumChannelName!);
 
-    // Ensure guild record exists
-    if (thread.guild) {
-      getOrCreateGuild(thread.guild.id, thread.guild.name);
-    }
 
-    const rules = buildRulesMessage();
-    try {
-      await (thread as any).send(rules);
-      console.log(`Posted rules in new thread under '${forumChannelName}': ${thread.id}`);
-    } catch (e) {
-      console.error("Failed to post rules message in new thread:", e);
-    }
-  } catch (err) {
-    console.error("Error handling threadCreate:", err);
-  }
 });
 
 // Auto-react with :fire: on image posts in the forum channel
@@ -539,40 +517,40 @@ async function scheduledDeadline() {
 
 async function deadlineResults(guild: Guild) {
   console.log(`Posting results to chat channel`);
-    try {
-      // Calculate the top three
-      const topThree: podiumArtist[] = await calculateTopThreeDrawings(guild, forumChannelName!);
-      // If winner has saved theme, create forum post
-      if (topThree.length === 0 || topThree[0].id === "none") {
-        console.log(`No drawing entries found for guild ${guild.id}`);
-        return;
-      }
-      const newPostId = await createForumPost(guild, forumChannelName!, topThree[0]);
-
-      // Build the results message
-      const result = await buildDeadlineResultsMessage(guild, topThree, newPostId);
-      if (!result) {
-        console.log(`No results to announce for guild ${guild.id}`);
-        return;
-      }
-      const content = result.content;
-      const chat = guild.channels.cache.find(
-        (ch) => ch.type === ChannelType.GuildText && ch.name === chatChannelName
-      ) as TextChannel | undefined;
-      if (!chat) {
-        console.log(`Chat channel '${chatChannelName}' not found in guild ${guild.id}`);
-        return;
-      }
-      try {
-        await chat.send({ content, allowedMentions: { users: result.mentionIds } });
-        console.log(`Posted daily results in guild ${guild.id} to text channel '${chatChannelName}'`);
-      } catch (e) {
-        console.error(`Failed to post daily results in guild ${guild.id}:`, e);
-      }
-
-    } catch (e) {
-      console.error("Error running scheduled job for guild:", guild.id, e);
+  try {
+    // Calculate the top three
+    const topThree: podiumArtist[] = await calculateTopThreeDrawings(guild, forumChannelName!);
+    // If winner has saved theme, create forum post
+    if (topThree.length === 0 || topThree[0].id === "none") {
+      console.log(`No drawing entries found for guild ${guild.id}`);
+      return;
     }
+    const newPostId = await createForumPost(guild, forumChannelName!, topThree[0]);
+
+    // Build the results message
+    const result = await buildDeadlineResultsMessage(guild, topThree, newPostId);
+    if (!result) {
+      console.log(`No results to announce for guild ${guild.id}`);
+      return;
+    }
+    const content = result.content;
+    const chat = guild.channels.cache.find(
+      (ch) => ch.type === ChannelType.GuildText && ch.name === chatChannelName
+    ) as TextChannel | undefined;
+    if (!chat) {
+      console.log(`Chat channel '${chatChannelName}' not found in guild ${guild.id}`);
+      return;
+    }
+    try {
+      await chat.send({ content, allowedMentions: { users: result.mentionIds } });
+      console.log(`Posted daily results in guild ${guild.id} to text channel '${chatChannelName}'`);
+    } catch (e) {
+      console.error(`Failed to post daily results in guild ${guild.id}:`, e);
+    }
+
+  } catch (e) {
+    console.error("Error running scheduled job for guild:", guild.id, e);
+  }
 }
 
 // Tally the votes and build the daily drawing results message embed
