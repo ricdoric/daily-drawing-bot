@@ -1,3 +1,5 @@
+import { GuildMember, PermissionsBitField } from "discord.js";
+
 // Return true if the message appears to be an image reply (attachment, embed image, or image URL)
 export function isImageMessage(msg: any): boolean {
   try {
@@ -49,3 +51,29 @@ export function isImageMessage(msg: any): boolean {
     `- The deadline is: 04:00 UTC / <t:${timestamp}:t> your local time\n`
     );
   }
+
+  // Check if a user has mod permissions (either specified mod role or kick permission).
+export function userHasModPermission(member: GuildMember | null): boolean {
+  if (!member) return false;
+
+  const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
+
+  // Check for kick permission
+  const canKick = member.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);
+  if (canKick) return true;
+
+  // Check for admin
+  const isAdmin = member.permissions?.has?.(PermissionsBitField.Flags?.Administrator ?? 0);
+  if (isAdmin) return true;
+
+  // Check for mod roles
+  if (modRoles.length > 0) {
+    for (const role of member.roles.cache.values()) {
+      if (modRoles.includes(role.id) || modRoles.includes(role.name)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
