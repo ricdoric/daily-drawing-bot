@@ -35,7 +35,7 @@ export async function handleDailyDeadlineCommand(
         flags: MessageFlags.Ephemeral,
       });
     await deadlineResults(guild, forumChannelName, chatChannelName);
-    await interaction.reply({ content: "Deadline results processed.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({ content: "Deadline manual execution completed.", flags: MessageFlags.Ephemeral });
   } catch (err) {
     console.error(err);
     await interaction.reply({
@@ -250,11 +250,11 @@ async function buildDeadlineResultsMessage(
       if (newPostId) {
         content += `The new theme for today is here: <#${newPostId}>\n\n`;
       } else {
-        content += `Please create a forum post with a new theme!\n\n`;
+        content += `You didn't have a saved theme before the deadline, please create a new forum post for today!\n\n`;
       }
     }
 
-    content += `-# Type \`/daily-theme\` at any time to save your own theme!\n`;
+    content += `-# Type \`/daily-theme\` before the deadline to save your theme and the bot will automatically post!\n`;
 
     const winnerId = topThree[0].id !== "none" ? topThree[0].id : null;
     return { content, winnerId, mentionIds: Array.from(mentionSet) };
