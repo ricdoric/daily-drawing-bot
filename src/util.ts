@@ -53,10 +53,8 @@ export function isImageMessage(msg: any): boolean {
   }
 
   // Check if a user has mod permissions (either specified mod role or kick permission).
-export function userHasModPermission(member: GuildMember | null): boolean {
+export function userHasModPermission(member: GuildMember | null, modRoles: string[] = []): boolean {
   if (!member) return false;
-
-  const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
 
   // Check for kick permission
   const canKick = member.permissions?.has?.(PermissionsBitField.Flags?.KickMembers ?? 0);

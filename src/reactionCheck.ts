@@ -1,5 +1,6 @@
 import { Message } from "discord.js";
 import { userHasModPermission } from "./util";
+import { getGuild } from "./database";
 
 /**
  * Check if a message is marked as overtime (timer emoji reacted by the author).
@@ -7,6 +8,9 @@ import { userHasModPermission } from "./util";
  */
 async function isMarkedOvertime(reply: Message<true>): Promise<boolean> {
   try {
+    const guildConfig = getGuild(reply.guild.id);
+    const modRoles: string[] = guildConfig?.modRoles ? guildConfig.modRoles.split(",").map((r) => r.trim()) : [];
+
     for (const reactCheck of reply.reactions.cache.values()) {
       try {
         const name = reactCheck.emoji.name;
@@ -27,7 +31,7 @@ async function isMarkedOvertime(reply: Message<true>): Promise<boolean> {
         // check if timer reactor has mod permission, mark overtime if so
         for (const user of usersForTimer.values()) {
           const member = await reply.guild.members.fetch(user.id).catch(() => null);
-          if (userHasModPermission(member)) {
+          if (userHasModPermission(member, modRoles)) {
             return true;
           }
         }

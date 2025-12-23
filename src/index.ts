@@ -31,9 +31,14 @@ import {
   handleTogglePingUsersButton,
   handleToggleThemeSavingButton,
 } from "./bot/commands/status";
+import {
+  handleDailyBotConfigCommand,
+  handleEditModRolesButton,
+  handleEditModRolesModal,
+} from "./bot/commands/config";
 
 const token = process.env.DISCORD_TOKEN;
-// const testingGuildId = process.env.TESTING_GUILD_ID;
+const testingGuildId = process.env.TESTING_GUILD_ID;
 const applicationId = process.env.APPLICATION_ID;
 const forumChannelName = process.env.FORUM_CHANNEL_NAME || "contestForum"; // TODO: replace with per-guild config
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
@@ -78,6 +83,12 @@ async function registerCommands() {
       dm_permission: false,
     },
     {
+      name: "daily-bot-config",
+      description: "Configure moderator roles for this server.",
+      default_member_permissions: PermissionsBitField.Flags.KickMembers.toString(),
+      dm_permission: false,
+    },
+    {
       name: "daily-theme",
       description: "Submit a new daily theme that will automatically post if you win.",
       dm_permission: false,
@@ -92,8 +103,12 @@ async function registerCommands() {
     });
   }
   const rest = new REST({ version: "10" }).setToken(token!);
-  await rest.put(Routes.applicationCommands(applicationId!), { body: commands });
-  console.log("Global slash commands registered: /daily-bot-status, /daily-theme.");
+  const route = testingGuildId
+    ? Routes.applicationGuildCommands(applicationId!, testingGuildId)
+    : Routes.applicationCommands(applicationId!);
+  await rest.put(route, { body: commands });
+  const scope = testingGuildId ? `guild ${testingGuildId}` : "globally";
+  console.log(`Slash commands registered ${scope}: /daily-bot-status, /daily-bot-config, /daily-theme.`);
 }
 
 client.once("clientReady", async () => {
@@ -138,6 +153,10 @@ client.on("interactionCreate", async (interaction) => {
         await handleDailyBotStatusCommand(interaction, botStatus);
         return;
       }
+      if (interaction.commandName === "daily-bot-config") {
+        await handleDailyBotConfigCommand(interaction);
+        return;
+      }
       if (interaction.commandName === "daily-theme") {
         await handleDailyThemeCommand(interaction);
         return;
@@ -166,9 +185,17 @@ client.on("interactionCreate", async (interaction) => {
         await handleToggleThemeSavingButton(interaction as ButtonInteraction, botStatus);
         return;
       }
+      if ((interaction as ButtonInteraction).customId === "edit-mod-roles") {
+        await handleEditModRolesButton(interaction as ButtonInteraction);
+        return;
+      }
     } else if (interaction.isModalSubmit && interaction.isModalSubmit()) {
       if ((interaction as ModalSubmitInteraction).customId === "daily-theme-modal") {
         await handleDailyThemeModalSubmit(interaction as ModalSubmitInteraction);
+        return;
+      }
+      if ((interaction as ModalSubmitInteraction).customId === "edit-mod-roles-modal") {
+        await handleEditModRolesModal(interaction as ModalSubmitInteraction);
         return;
       }
     }

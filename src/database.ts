@@ -35,10 +35,18 @@ function initializeDatabase(): void {
         rulesMsg TEXT,
         pingUsers INTEGER DEFAULT 0,
         themeSavingEnabled INTEGER DEFAULT 0,
+        modRoles TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Add new columns if they don't exist (for migrations)
+    const guildColumns = db.pragma("table_info(guilds)") as { name: string }[];
+    const hasModRoles = guildColumns.some(col => col.name === "modRoles");
+    if (!hasModRoles) {
+      db.exec(`ALTER TABLE guilds ADD COLUMN modRoles TEXT;`);
+    }
 
     // Create users table
     db.exec(`
@@ -74,10 +82,10 @@ function getOrCreateGuild(guildId: string, name?: string): GuildConfig {
     if (existing) return existing;
 
     const stmt = db.prepare(`
-      INSERT INTO guilds (guildId, name, pingUsers)
-      VALUES (?, ?, ?)
+      INSERT INTO guilds (guildId, name, pingUsers, modRoles)
+      VALUES (?, ?, ?, ?)
     `);
-    stmt.run(guildId, name || "Unknown Guild", 0);
+    stmt.run(guildId, name || "Unknown Guild", 0, null);
 
     return db.prepare("SELECT * FROM guilds WHERE guildId = ?").get(guildId) as GuildConfig;
   } catch (err) {
