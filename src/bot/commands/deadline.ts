@@ -254,7 +254,7 @@ async function buildDeadlineResultsMessage(
       }
     }
 
-    content += `-# Type \`/daily-theme\` before the deadline to save your theme and the bot will automatically post!\n`;
+    // content += `-# Type \`/daily-theme\` before the deadline to save your theme and the bot will automatically post!\n`;
 
     const winnerId = topThree[0].id !== "none" ? topThree[0].id : null;
     return { content, winnerId, mentionIds: Array.from(mentionSet) };
