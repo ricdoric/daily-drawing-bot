@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { calculateTopThreeDrawings } from "../deadlineLogic";
+import { calculateTopThreeDrawings } from "../bot/commands/deadline";
 import { ChannelType } from "discord.js";
 
 // Mock reaction helpers to return deterministic counts and no overtime
@@ -19,15 +19,45 @@ describe("calculateTopThreeDrawings", () => {
 
     // Five image replies
     const replies = [
-      { id: "m1", author: { id: "u1", username: "Alice" }, content: "https://example.com/a.png", reactions: { cache: new Map() } },
-      { id: "m2", author: { id: "u2", username: "Bob" }, content: "https://example.com/b.png", reactions: { cache: new Map() } },
-      { id: "m3", author: { id: "u3", username: "Cathy" }, content: "https://example.com/c.png", reactions: { cache: new Map() } },
-      { id: "m4", author: { id: "u4", username: "Dan" }, content: "https://example.com/d.png", reactions: { cache: new Map() } },
-      { id: "m5", author: { id: "u5", username: "Eve" }, content: "https://example.com/e.png", reactions: { cache: new Map() } },
+      {
+        id: "m1",
+        author: { id: "u1", username: "Alice" },
+        content: "https://example.com/a.png",
+        reactions: { cache: new Map() },
+      },
+      {
+        id: "m2",
+        author: { id: "u2", username: "Bob" },
+        content: "https://example.com/b.png",
+        reactions: { cache: new Map() },
+      },
+      {
+        id: "m3",
+        author: { id: "u3", username: "Cathy" },
+        content: "https://example.com/c.png",
+        reactions: { cache: new Map() },
+      },
+      {
+        id: "m4",
+        author: { id: "u4", username: "Dan" },
+        content: "https://example.com/d.png",
+        reactions: { cache: new Map() },
+      },
+      {
+        id: "m5",
+        author: { id: "u5", username: "Eve" },
+        content: "https://example.com/e.png",
+        reactions: { cache: new Map() },
+      },
     ];
 
     // The original post (should be excluded)
-    const post = { id: "post", author: { id: "op", username: "OP" }, content: "Original thread post", reactions: { cache: new Map() } };
+    const post = {
+      id: "post",
+      author: { id: "op", username: "OP" },
+      content: "Original thread post",
+      reactions: { cache: new Map() },
+    };
 
     // Build messages Map so that replies come first and post is last (the function excludes the last message)
     const messagesMap = new Map<string, any>();
@@ -37,8 +67,11 @@ describe("calculateTopThreeDrawings", () => {
     const thread = {
       id: "thread1",
       createdTimestamp: Date.now(),
-      messages: { fetch: async () => ({ values: () => messagesMap.values(), // collection-like object with values()
-      }) },
+      messages: {
+        fetch: async () => ({
+          values: () => messagesMap.values(), // collection-like object with values()
+        }),
+      },
     };
 
     const forumChannel = {
@@ -48,7 +81,9 @@ describe("calculateTopThreeDrawings", () => {
     };
 
     // Emulate discord.js Collection with a 'find' method
-    const guild = { channels: { cache: { find: (predicate: any) => (predicate(forumChannel) ? forumChannel : undefined) } } } as any;
+    const guild = {
+      channels: { cache: { find: (predicate: any) => (predicate(forumChannel) ? forumChannel : undefined) } },
+    } as any;
 
     const top = await calculateTopThreeDrawings(guild, forumChannelName);
 

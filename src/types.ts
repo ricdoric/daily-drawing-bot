@@ -19,6 +19,7 @@ export interface GuildConfig {
   rulesMsg?: string | null;
   pingUsers?: number | null;
   themeSavingEnabled?: number | null;
+  modRoles?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 } 
