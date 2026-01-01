@@ -253,6 +253,8 @@ client.on("messageCreate", async (message) => {
   }
 });
 
+// Log startup timestamp before connecting to Discord
+console.log(`Bot started at ${new Date().toISOString()}`);
 client.login(token);
 
 // Schedule daily job (configured by CRON_SCHEDULE env var) to run the deadline logic across guilds

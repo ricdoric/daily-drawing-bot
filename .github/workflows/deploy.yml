@@ -51,5 +51,5 @@ jobs:
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
           cd ${{ secrets.SERVER_PATH }} &&
           npm install --production &&
-          pm2 restart all || pm2 start dist/index.js --name drawbot
+          pm2 startOrReload ecosystem.config.js --env ${{ github.event.inputs.environment }}
         "
