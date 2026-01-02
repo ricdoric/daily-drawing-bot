@@ -46,13 +46,14 @@ export async function handleDailyDeadlineCommand(
 }
 
 export async function deadlineResults(guild: Guild, forumChannelName?: string, chatChannelName?: string) {
-  console.log(`Posting results to chat channel`);
+  console.log(`Beginning deadline calculations for guild ${guild.id}`);
+  console.log(`Forum Channel: ${forumChannelName}, Chat Channel: ${chatChannelName}`);
   try {
     // Calculate the top three
     const topThree: podiumArtist[] = await calculateTopThreeDrawings(guild, forumChannelName!);
     // If winner has saved theme, create forum post
     if (topThree.length === 0 || topThree[0].id === "none") {
-      console.log(`No drawing entries found for guild ${guild.id}`);
+      console.log(`No drawing entries found for guild ${guild.id} in forum ${forumChannelName}`);
       return;
     }
     const newPostId = await createForumPost(guild, forumChannelName!, topThree[0]);
@@ -93,7 +94,10 @@ export async function calculateTopThreeDrawings(
     const forum = guild.channels.cache.find(
       (ch) => ch.type === ChannelType.GuildForum && ch.name === forumChannelName
     ) as ForumChannel | undefined;
-    if (!forum) return topThree;
+    if (!forum) {
+      console.log(`Forum channel '${forumChannelName}' not found in guild ${guild.id}`);
+      return topThree;
+    }
 
     // Fetch the most recent thread (post) in the forum
     const threads = await forum.threads.fetchActive();
@@ -104,7 +108,11 @@ export async function calculateTopThreeDrawings(
       return bTime - aTime;
     });
     const latestThread = threadArr[0];
-    if (!latestThread) return topThree;
+    console.log(`Latest thread in forum '${forumChannelName}' is '${latestThread?.name}' (${latestThread?.id})`);
+    if (!latestThread) {
+      console.log(`No threads found in forum '${forumChannelName}' in guild ${guild.id}`);
+      return topThree;
+    }
 
     // Fetch all messages in the thread (the post and all replies)
     const allMessages = await latestThread.messages.fetch({ limit: 100 });

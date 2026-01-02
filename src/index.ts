@@ -36,6 +36,7 @@ import {
   handleEditModRolesButton,
   handleEditModRolesModal,
 } from "./bot/commands/config";
+import { handleDailyBotDebugCommand } from "./bot/commands/debug";
 
 const token = process.env.DISCORD_TOKEN;
 const testingGuildId = process.env.TESTING_GUILD_ID;
@@ -44,6 +45,7 @@ const forumChannelName = process.env.FORUM_CHANNEL_NAME || "contestForum"; // TO
 const chatChannelName = process.env.CHAT_CHANNEL_NAME;
 const pingUsersFlag = process.env.PING_USERS === "true";
 const modRoles: string[] = process.env.MOD_ROLES ? process.env.MOD_ROLES.split(",").map((r) => r.trim()) : [];
+const adminUsers: string[] = process.env.ADMIN_USERS ? process.env.ADMIN_USERS.split(",").map((u) => u.trim()) : [];
 const DEBUG = process.env.DEBUG === "true";
 
 if (!token || !applicationId) {
@@ -93,11 +95,16 @@ async function registerCommands() {
       description: "Submit a new daily theme that will automatically post if you win.",
       dm_permission: false,
     },
+    {
+      name: "daily-bot-debug",
+      description: "Show debug information (admin only).",
+      dm_permission: false,
+    },
   ];
   if (DEBUG) {
     commands.push({
       name: "daily-deadline",
-      description: "DEBUG COMMAND - test the deadline vote counting.",
+      description: "DEBUG COMMAND - force the deadline vote counting.",
       default_member_permissions: PermissionsBitField.Flags.ManageGuild.toString(),
       dm_permission: false,
     });
@@ -161,6 +168,10 @@ client.on("interactionCreate", async (interaction) => {
         await handleDailyThemeCommand(interaction);
         return;
       }
+      if (interaction.commandName === "daily-bot-debug") {
+        await handleDailyBotDebugCommand(interaction, adminUsers, forumChannelName, chatChannelName);
+        return;
+      }
     } else if (interaction.isButton()) {
       if ((interaction as ButtonInteraction).customId === "daily-theme-update") {
         await handleLaunchDailyThemeModal(interaction as ButtonInteraction);
@@ -209,7 +220,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// Watch for new threads created in the forum channel and post the rules
+// Watch for new threads created by users in the forum channel and post the rules
 client.on("threadCreate", async (thread) => {
   if (botStatus === BotStatus.OFF) return;
 
