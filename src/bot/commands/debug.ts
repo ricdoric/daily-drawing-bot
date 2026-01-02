@@ -12,15 +12,22 @@ export async function handleDailyBotDebugCommand(
   chatChannelName: string | undefined
 ) {
   try {
-    // Check if user is in admin list
-    if (!adminUsers.includes(interaction.user.id)) {
+    const guild = interaction.guild;
+    if (!guild) {
+      return interaction.reply({
+        content: "This command can only be used in a guild.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    // Check if user is in admin list or is the server owner
+    const isOwner = guild.ownerId === interaction.user.id;
+    if (!adminUsers.includes(interaction.user.id) && !isOwner) {
       return interaction.reply({
         content: "You do not have permission to use this command.",
         flags: MessageFlags.Ephemeral,
       });
     }
-
-    const guild = interaction.guild;
     if (!guild) {
       return interaction.reply({
         content: "This command can only be used in a guild.",

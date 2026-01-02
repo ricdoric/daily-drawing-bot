@@ -291,7 +291,7 @@ async function scheduleDeadline() {
         continue;
       }
 
-      deadlineResults(guild);
+      deadlineResults(guild, forumChannelName, chatChannelName);
     } catch (e) {
       console.error("Error running scheduled job for guild:", id, e);
     }
